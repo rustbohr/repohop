@@ -1,11 +1,25 @@
 package cli
 
 import (
+	"context"
 	"errors"
 
 	"github.com/rustbohr/repohop/internal/config"
+	"github.com/rustbohr/repohop/internal/git"
 	"github.com/rustbohr/repohop/internal/model"
 )
+
+// requireGit fails once, clearly, when git is missing or too old, rather than
+// letting every repository fail separately.
+func requireGit(ctx context.Context) error {
+	if err := git.Default.Require(ctx); err != nil {
+		if errors.Is(err, git.ErrNotFound) {
+			return usagef("git was not found on PATH; repohop drives the real git binary")
+		}
+		return usageError{err}
+	}
+	return nil
+}
 
 // loadConfig loads configuration honouring the global --config flag.
 func loadConfig() (*config.Config, error) {
@@ -19,7 +33,10 @@ func loadConfig() (*config.Config, error) {
 // activeProject loads the configuration and resolves the project to act on,
 // turning the "nothing configured yet" and "which one?" cases into advice
 // rather than a bare error.
-func activeProject() (*config.Config, model.Project, error) {
+func activeProject(ctx context.Context) (*config.Config, model.Project, error) {
+	if err := requireGit(ctx); err != nil {
+		return nil, model.Project{}, err
+	}
 	cfg, err := loadConfig()
 	if err != nil {
 		return nil, model.Project{}, err

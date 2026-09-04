@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -158,4 +159,56 @@ func (r *Runner) Version(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return strings.TrimPrefix(strings.TrimSpace(out), "git version "), nil
+}
+
+// MinMajor and MinMinor are the oldest git repohop is known to work with.
+// `git status --porcelain=v2` arrived in 2.11; everything else repohop runs is
+// older than that.
+const (
+	MinMajor = 2
+	MinMinor = 11
+)
+
+// ErrTooOld reports a git that predates what repohop relies on.
+type ErrTooOld struct{ Version string }
+
+func (e *ErrTooOld) Error() string {
+	return fmt.Sprintf("git %s is too old: repohop needs %d.%d or newer", e.Version, MinMajor, MinMinor)
+}
+
+// Require checks that a usable git is on PATH. It is called once at startup so
+// a missing or ancient git is one clear message rather than a failure per
+// repository.
+func (r *Runner) Require(ctx context.Context) error {
+	version, err := r.Version(ctx)
+	if err != nil {
+		if errors.Is(err, ErrNotFound) {
+			return ErrNotFound
+		}
+		return err
+	}
+	major, minor := parseVersion(version)
+	if major < MinMajor || (major == MinMajor && minor < MinMinor) {
+		return &ErrTooOld{Version: version}
+	}
+	return nil
+}
+
+// parseVersion pulls the major and minor numbers out of a git version string.
+// An unparseable version is treated as new enough: better to try than to
+// refuse to run against, say, a vendor build with an odd version string.
+func parseVersion(version string) (major, minor int) {
+	fields := strings.SplitN(version, ".", 3)
+	if len(fields) < 2 {
+		return MinMajor, MinMinor
+	}
+	major, err := strconv.Atoi(strings.TrimSpace(fields[0]))
+	if err != nil {
+		return MinMajor, MinMinor
+	}
+	minor, err = strconv.Atoi(strings.TrimSpace(fields[1]))
+	if err != nil {
+		return MinMajor, MinMinor
+	}
+	return major, minor
 }

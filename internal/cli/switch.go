@@ -26,7 +26,7 @@ func newSwitchCmd() *cobra.Command {
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			branch := args[0]
-			cfg, project, err := activeProject()
+			cfg, project, err := activeProject(cmd.Context())
 			if err != nil {
 				return err
 			}

@@ -28,6 +28,9 @@ func runDefault(cmd *cobra.Command, args []string) error {
 		return status.RunE(status, args)
 	}
 
+	if err := requireGit(cmd.Context()); err != nil {
+		return err
+	}
 	cfg, err := loadConfig()
 	if err != nil {
 		return err

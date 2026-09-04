@@ -15,7 +15,7 @@ func newFetchCmd() *cobra.Command {
 		Short: "Fetch every repository, pruning deleted remote branches",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, project, err := activeProject()
+			cfg, project, err := activeProject(cmd.Context())
 			if err != nil {
 				return err
 			}
@@ -41,7 +41,7 @@ func newPullCmd() *cobra.Command {
 			"repohop never merges, rebases or forces.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, project, err := activeProject()
+			cfg, project, err := activeProject(cmd.Context())
 			if err != nil {
 				return err
 			}

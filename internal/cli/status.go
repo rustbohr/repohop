@@ -21,7 +21,7 @@ func newStatusCmd() *cobra.Command {
 		Short: "Show every repository's branch and state",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			cfg, project, err := activeProject()
+			cfg, project, err := activeProject(cmd.Context())
 			if err != nil {
 				return err
 			}
