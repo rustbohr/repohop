@@ -108,6 +108,12 @@ the highlighted branch and where:
 The preview moves below the list on a narrow terminal and collapses to a
 one-line summary on a very narrow one.
 
+The list appears immediately from the refs already on disk, and the repositories
+are fetched in the background so a branch a colleague pushed a minute ago turns
+up without you ever waiting on the network. `alt+f` fetches again on demand;
+`alt+p` turns the after-checkout fast-forward off for this switch. Set
+`defaults.fetch: false` if you would rather it never fetch on its own.
+
 **Run screen** — repositories with local changes are not a hard failure: you
 choose to skip them, or to stash and switch (the stashes are restorable from
 the summary with `u`). Failures expand with `enter` to the exact `git` command
@@ -134,7 +140,7 @@ equivalent command and prints a plain table, so it works in scripts and CI.
 
 ```
 repohop status [--project NAME] [--json] [--only a,b]
-repohop switch <branch> [--no-fetch] [--no-pull] [--stash] [--only a,b]
+repohop switch <branch> [-n|--no-fetch] [-p|--no-pull] [--stash] [--only a,b]
 repohop fetch  [--project NAME]
 repohop pull   [--project NAME]
 repohop projects
@@ -151,6 +157,9 @@ non-interactive equivalent of the setup flow:
 ```sh
 repohop projects add acme --scan ~/src/acme
 ```
+
+`-n` skips the fetch and switches against the refs already on disk; with `-p`
+as well it is a fully offline switch.
 
 Exit codes: `0` all good · `1` partial failure (some repository did not switch
 or could not be read) · `2` usage or configuration error.

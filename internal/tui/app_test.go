@@ -663,3 +663,157 @@ func TestAPanicWhileDrawingIsAlsoCaught(t *testing.T) {
 
 	u.quit(t)
 }
+
+// originProject clones two repositories from a shared origin, so fetching has
+// something real to do.
+func originProject(t *testing.T) (project model.Project, origin string) {
+	t.Helper()
+	root := t.TempDir()
+	origin = filepath.Join(root, "origin.git")
+	gitRun(t, root, "-c", "init.defaultBranch=master", "init", "--bare", "-q", origin)
+
+	seed := filepath.Join(root, "seed")
+	if err := os.MkdirAll(seed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, seed, "-c", "init.defaultBranch=master", "init", "-q", ".")
+	gitRun(t, seed, "config", "user.name", "repohop test")
+	gitRun(t, seed, "config", "user.email", "test@example.invalid")
+	if err := os.WriteFile(filepath.Join(seed, "README.md"), []byte("hi\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	gitRun(t, seed, "add", "-A")
+	gitRun(t, seed, "commit", "-q", "--no-gpg-sign", "-m", "initial commit")
+	gitRun(t, seed, "remote", "add", "origin", origin)
+	gitRun(t, seed, "push", "-q", "-u", "origin", "master")
+
+	for _, name := range []string{"api", "web"} {
+		dir := filepath.Join(root, name)
+		gitRun(t, root, "clone", "-q", origin, dir)
+		gitRun(t, dir, "config", "user.name", "repohop test")
+		gitRun(t, dir, "config", "user.email", "test@example.invalid")
+		project.Repos = append(project.Repos, model.Repo{Name: name, Path: dir})
+	}
+	project.Name = "acme"
+
+	// A branch pushed after those clones: only a fetch makes it visible.
+	gitRun(t, seed, "checkout", "-q", "-b", "feat/pushed-later")
+	gitRun(t, seed, "push", "-q", "origin", "feat/pushed-later")
+	return project, origin
+}
+
+func TestPickerFetchesSoNewBranchesCanBePicked(t *testing.T) {
+	project, _ := originProject(t)
+	u := start(t, New(context.Background(), testConfig(), project))
+	u.waitFor(t, "master")
+
+	// feat/pushed-later was pushed after these clones, so it is only in the
+	// list once the picker's fetch has landed.
+	u.forget()
+	u.press("s")
+	u.waitFor(t, "pick a branch")
+	u.waitFor(t, "feat/pushed-later")
+
+	u.forget()
+	u.tm.Type("pushed")
+	u.send(tea.KeyMsg{Type: tea.KeyEnter})
+	u.waitFor(t, "OLD BRANCH")
+
+	for _, repo := range project.Repos {
+		if got := currentBranch(t, repo.Path); got != "feat/pushed-later" {
+			t.Errorf("%s is on %q, want feat/pushed-later", repo.Name, got)
+		}
+	}
+	u.quit(t)
+}
+
+func TestPickerListsLocalBranchesWithoutFetching(t *testing.T) {
+	project, origin := originProject(t)
+
+	// With the remote gone a fetch can only fail. With fetching off the picker
+	// must still work from the refs already on disk.
+	if err := os.Rename(origin, origin+".gone"); err != nil {
+		t.Fatal(err)
+	}
+	cfg := testConfig()
+	cfg.Settings.Fetch = false
+
+	u := start(t, New(context.Background(), cfg, project))
+	u.waitFor(t, "master")
+
+	u.forget()
+	u.press("s")
+	u.waitFor(t, "pick a branch")
+	u.waitFor(t, "master")
+
+	u.forget()
+	u.send(tea.KeyMsg{Type: tea.KeyEnter})
+	u.waitFor(t, "OLD BRANCH")
+
+	u.quit(t)
+}
+
+func TestPickerPullToggleCarriesIntoTheSwitch(t *testing.T) {
+	cfg := testConfig()
+	cfg.Settings.Fetch = false
+	sh := &shared{cfg: cfg, theme: NewTheme(), ctx: context.Background(), width: 120, height: 20}
+
+	p := newPicker(sh, []model.Repo{{Name: "api", Path: "/r/api"}})
+	p.loading = false
+	p.all = []model.BranchInfo{{Name: "master"}}
+	p.filter()
+
+	if !p.pull {
+		t.Fatal("the picker starts with pull off, want the configured default")
+	}
+
+	// alt+p is a command, not text: the query must stay empty.
+	p.key(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p"), Alt: true})
+	if p.pull {
+		t.Error("alt+p did not turn pulling off")
+	}
+	if p.query != "" {
+		t.Errorf("query = %q, want alt combinations to stay out of it", p.query)
+	}
+	if !strings.Contains(p.View(), "pull off") {
+		t.Errorf("the picker does not show the choice:\n%s", p.View())
+	}
+
+	// The choice travels with the job the picker starts.
+	_, cmd := p.key(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("enter did not start a switch")
+	}
+	msg, ok := cmd().(pushMsg)
+	if !ok {
+		t.Fatalf("enter produced %T, want a screen push", cmd())
+	}
+	run, ok := msg.screen.(*run)
+	if !ok {
+		t.Fatalf("enter pushed %T, want the run screen", msg.screen)
+	}
+	if run.job.pull {
+		t.Error("the job pulls despite the picker saying not to")
+	}
+}
+
+func TestPickerKeepsTheCursorWhenTheListReloads(t *testing.T) {
+	cfg := testConfig()
+	cfg.Settings.Fetch = false
+	sh := &shared{cfg: cfg, theme: NewTheme(), ctx: context.Background(), width: 120, height: 20}
+
+	p := newPicker(sh, []model.Repo{{Name: "api", Path: "/r/api"}})
+	p.loading = false
+	p.all = []model.BranchInfo{{Name: "master"}, {Name: "feat/one"}, {Name: "feat/two"}}
+	p.filter()
+	p.cursor = 2
+	was := p.matches[p.cursor].info.Name
+
+	// A background fetch brings in another branch and rebuilds the list.
+	p.all = append(p.all, model.BranchInfo{Name: "aaa-new"})
+	p.refilter()
+
+	if got := p.matches[p.cursor].info.Name; got != was {
+		t.Errorf("cursor moved from %q to %q when the list reloaded", was, got)
+	}
+}

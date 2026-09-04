@@ -23,10 +23,13 @@ type job struct {
 	kind   jobKind
 	repos  []model.Repo
 	branch model.BranchInfo
+	// pull is this run's choice, seeded from the configured default and
+	// changeable in the picker.
+	pull bool
 }
 
-func switchJob(repos []model.Repo, branch model.BranchInfo) job {
-	return job{kind: jobSwitch, repos: repos, branch: branch}
+func switchJob(repos []model.Repo, branch model.BranchInfo, pull bool) job {
+	return job{kind: jobSwitch, repos: repos, branch: branch, pull: pull}
 }
 func fetchJob(repos []model.Repo) job { return job{kind: jobFetch, repos: repos} }
 func pullJob(repos []model.Repo) job  { return job{kind: jobPull, repos: repos} }
@@ -115,9 +118,15 @@ func (r *run) Init() tea.Cmd {
 		r.phase = phaseRunning
 		return tea.Batch(r.spin.Tick, r.start(ops.DirtySkip))
 	}
-	return tea.Batch(r.spin.Tick, func() tea.Msg {
+	r.phase = phasePreflight
+	return tea.Batch(r.spin.Tick, r.preflight())
+}
+
+// preflight re-checks the working trees before anything is written.
+func (r *run) preflight() tea.Cmd {
+	return func() tea.Msg {
 		return preflightMsg{pre: r.sh.runner.Preflight(r.sh.ctx, r.job.repos, r.job.branch.Name)}
-	})
+	}
 }
 
 func (r *run) Title() string { return r.job.verb() }
@@ -239,7 +248,7 @@ func (r *run) start(dirty ops.DirtyPolicy) tea.Cmd {
 		default:
 			opts := ops.SwitchOptions{
 				Branch: r.job.branch.Name,
-				Pull:   r.sh.cfg.Settings.Pull,
+				Pull:   r.job.pull,
 				Dirty:  dirty,
 			}
 			r.sh.runner.Switch(r.sh.ctx, r.job.repos, opts, func(result ops.SwitchResult) {

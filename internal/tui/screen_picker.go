@@ -27,6 +27,15 @@ type picker struct {
 	loading  bool
 	failures []ops.OpResult
 	spin     spinner.Model
+
+	// pull is this switch's choice, seeded from the configured default.
+	pull bool
+	// fetching is true while remote refs are being updated in the background.
+	fetching bool
+	// fetchedOnce records that the automatic fetch has already run.
+	fetchedOnce bool
+	// fetchNote reports a fetch that did not go cleanly.
+	fetchNote string
 }
 
 // pickerMatch is one candidate plus the positions the query matched, so the
@@ -35,6 +44,9 @@ type pickerMatch struct {
 	info      model.BranchInfo
 	positions []int
 }
+
+// fetchedMsg reports that the background fetch has finished.
+type fetchedMsg struct{ failures int }
 
 // branchesLoadedMsg carries the enumerated branches back into the model.
 type branchesLoadedMsg struct {
@@ -45,14 +57,41 @@ type branchesLoadedMsg struct {
 func newPicker(sh *shared, repos []model.Repo) *picker {
 	spin := spinner.New(spinner.WithSpinner(spinner.MiniDot))
 	spin.Style = sh.theme.Spinner
-	return &picker{sh: sh, repos: repos, loading: true, spin: spin}
+	return &picker{
+		sh:      sh,
+		repos:   repos,
+		loading: true,
+		spin:    spin,
+		pull:    sh.cfg.Settings.Pull,
+	}
 }
 
 func (p *picker) Init() tea.Cmd {
-	return tea.Batch(p.spin.Tick, func() tea.Msg {
+	// The local refs are on disk, so the list appears at once; the fetch runs
+	// alongside it and the list is rebuilt when it lands. Waiting on the
+	// network before showing anything is what made the old script's
+	// --no-fetch worth having.
+	cmds := []tea.Cmd{p.spin.Tick, p.loadBranches()}
+	if p.sh.cfg.Settings.Fetch {
+		p.fetching, p.fetchedOnce = true, true
+		cmds = append(cmds, p.startFetch())
+	}
+	return tea.Batch(cmds...)
+}
+
+func (p *picker) loadBranches() tea.Cmd {
+	return func() tea.Msg {
 		sets, failures := p.sh.runner.Branches(p.sh.ctx, p.repos)
 		return branchesLoadedMsg{sets: sets, failures: failures}
-	})
+	}
+}
+
+// startFetch updates the remote refs, then reloads the candidate list.
+func (p *picker) startFetch() tea.Cmd {
+	return func() tea.Msg {
+		results := p.sh.runner.Fetch(p.sh.ctx, p.repos, nil)
+		return fetchedMsg{failures: ops.Failures(results)}
+	}
 }
 
 func (p *picker) Title() string { return "switch — pick a branch" }
@@ -62,8 +101,17 @@ func (p *picker) Hints() []Hint {
 		{"type", "filter"},
 		{"↑/↓", "move"},
 		{"enter", "switch"},
+		{"alt+f", "fetch again"},
+		{"alt+p", "pull " + onOff(p.pull)},
 		{"esc", "cancel"},
 	}
+}
+
+func onOff(on bool) string {
+	if on {
+		return "on"
+	}
+	return "off"
 }
 
 func (p *picker) Update(msg tea.Msg) (screen, tea.Cmd) {
@@ -72,11 +120,21 @@ func (p *picker) Update(msg tea.Msg) (screen, tea.Cmd) {
 		p.loading = false
 		p.failures = msg.failures
 		p.all = model.CollectBranches(p.repos, msg.sets)
-		p.filter()
+		p.refilter()
 		return p, nil
 
+	case fetchedMsg:
+		p.fetching = false
+		p.fetchNote = ""
+		if msg.failures > 0 {
+			// A repository that could not be fetched is worth saying, but the
+			// branches already known locally are still there to switch to.
+			p.fetchNote = plural(msg.failures, "repository") + " could not be fetched"
+		}
+		return p, p.loadBranches()
+
 	case spinner.TickMsg:
-		if !p.loading {
+		if !p.loading && !p.fetching {
 			return p, nil
 		}
 		var cmd tea.Cmd
@@ -108,12 +166,24 @@ func (p *picker) key(msg tea.KeyMsg) (screen, tea.Cmd) {
 	case "ctrl+u":
 		p.query = ""
 		p.filter()
+	case "alt+f":
+		if !p.fetching {
+			p.fetching = true
+			return p, tea.Batch(p.spin.Tick, p.startFetch())
+		}
+	case "alt+p":
+		p.pull = !p.pull
 	case "enter":
 		if p.cursor < len(p.matches) {
 			branch := p.matches[p.cursor].info
-			return p, push(newRun(p.sh, switchJob(p.repos, branch)))
+			return p, push(newRun(p.sh, switchJob(p.repos, branch, p.pull)))
 		}
 	default:
+		// Alt combinations are commands, never text: typing filters, but
+		// alt+something that is not bound must not end up in the query.
+		if msg.Alt {
+			break
+		}
 		if msg.Type == tea.KeyRunes {
 			p.query += string(msg.Runes)
 			p.filter()
@@ -130,6 +200,25 @@ func (p *picker) move(delta int) {
 		return
 	}
 	p.cursor = min(max(p.cursor+delta, 0), len(p.matches)-1)
+}
+
+// refilter rebuilds the match list, keeping the cursor on the branch it was
+// already on: a background fetch must not move the selection under the user.
+func (p *picker) refilter() {
+	var was string
+	if p.cursor < len(p.matches) {
+		was = p.matches[p.cursor].info.Name
+	}
+	p.filter()
+	if was == "" {
+		return
+	}
+	for i, match := range p.matches {
+		if match.info.Name == was {
+			p.cursor = i
+			return
+		}
+	}
 }
 
 // filter re-ranks the candidates for the current query. Ordering: an exact
@@ -249,7 +338,14 @@ func (p *picker) renderList(width int) string {
 
 	var b strings.Builder
 	b.WriteString("  " + t.Key.Render("› ") + p.query + t.Cursor.Render("▏") + "\n")
-	b.WriteString("  " + t.Muted.Render(plural(len(p.matches), "branch")+" of "+itoa(len(p.all))) + "\n")
+	status := plural(len(p.matches), "branch") + " of " + itoa(len(p.all)) + "  ·  pull " + onOff(p.pull)
+	switch {
+	case p.fetching:
+		status += "  ·  " + p.spin.View() + " fetching"
+	case p.fetchNote != "":
+		status += "  ·  " + p.fetchNote
+	}
+	b.WriteString("  " + t.Muted.Render(status) + "\n")
 
 	if len(p.matches) == 0 {
 		b.WriteString("\n  " + t.Muted.Render("no branch matches"))

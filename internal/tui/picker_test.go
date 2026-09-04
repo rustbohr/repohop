@@ -12,7 +12,7 @@ import (
 // concurrent load.
 func pickerWith(t *testing.T, repos []model.Repo, sets map[string]git.BranchSet) *picker {
 	t.Helper()
-	sh := &shared{theme: NewTheme(), width: 120, height: 20}
+	sh := &shared{cfg: testConfig(), theme: NewTheme(), width: 120, height: 20}
 	p := newPicker(sh, repos)
 	p.loading = false
 	p.all = model.CollectBranches(repos, sets)

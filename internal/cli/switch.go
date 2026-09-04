@@ -22,7 +22,9 @@ func newSwitchCmd() *cobra.Command {
 		Long: "Put every repository onto one branch.\n\n" +
 			"A repository is only switched if the branch already exists locally or on\n" +
 			"origin; repohop never creates a branch. Repositories with local changes\n" +
-			"are skipped unless --stash is given.",
+			"are skipped unless --stash is given.\n\n" +
+			"--no-fetch is the quicker switch, against the refs already on disk;\n" +
+			"together with --no-pull it is a fully offline one.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			branch := args[0]
@@ -66,8 +68,10 @@ func newSwitchCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringSliceVar(&only, "only", nil, "act on these repositories only")
-	cmd.Flags().BoolVar(&noFetch, "no-fetch", false, "skip the fetch before switching")
-	cmd.Flags().BoolVar(&noPull, "no-pull", false, "skip the fast-forward after switching")
+	cmd.Flags().BoolVarP(&noFetch, "no-fetch", "n", false,
+		"skip the fetch before switching, using the refs already present locally")
+	cmd.Flags().BoolVarP(&noPull, "no-pull", "p", false,
+		"don't fast-forward after switching; just check out the branch")
 	cmd.Flags().BoolVar(&stash, "stash", false, "stash local changes instead of skipping the repository")
 	return cmd
 }
