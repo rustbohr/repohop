@@ -355,3 +355,37 @@ func (c *Config) Resolve(name string) (model.Project, error) {
 	}
 	return model.Project{}, ErrAmbiguousProject
 }
+
+// ReadFile reads one config file. A missing file yields an empty File, so the
+// setup flow can write the first project without special-casing.
+func ReadFile(path string) (*File, error) {
+	file, err := readFile(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return &File{Version: SchemaVersion, Path: path}, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return file, nil
+}
+
+// AddProject writes a project into a config file, replacing any project of the
+// same name.
+func AddProject(path string, spec ProjectSpec) error {
+	file, err := ReadFile(path)
+	if err != nil {
+		return err
+	}
+	replaced := false
+	for i, existing := range file.Projects {
+		if existing.Name == spec.Name {
+			file.Projects[i] = spec
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		file.Projects = append(file.Projects, spec)
+	}
+	return Save(path, file)
+}

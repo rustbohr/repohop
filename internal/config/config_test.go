@@ -375,3 +375,31 @@ func TestFindDirConfigWalksUp(t *testing.T) {
 		t.Errorf("FindDirConfig(deep) = %q, want the nearest config %q", got, nearer)
 	}
 }
+
+func TestAddProject(t *testing.T) {
+	isolate(t)
+	path := filepath.Join(t.TempDir(), "config.yaml")
+
+	if err := AddProject(path, ProjectSpec{Name: "acme", Base: "~/src", Repos: []RepoSpec{{Path: "api"}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := AddProject(path, ProjectSpec{Name: "other", Repos: []RepoSpec{{Path: "/b"}}}); err != nil {
+		t.Fatal(err)
+	}
+	// The same name replaces rather than duplicating.
+	if err := AddProject(path, ProjectSpec{Name: "acme", Base: "~/src", Repos: []RepoSpec{{Path: "api"}, {Path: "web"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(cfg.Names(), ","); got != "acme,other" {
+		t.Fatalf("projects = %q, want acme,other", got)
+	}
+	acme, _ := cfg.Project("acme")
+	if len(acme.Repos) != 2 {
+		t.Errorf("acme has %d repos, want the rewritten 2", len(acme.Repos))
+	}
+}
