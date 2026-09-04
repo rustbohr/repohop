@@ -46,6 +46,8 @@ func newRootCmd(version string) *cobra.Command {
 		Long: "repohop shows every repository in a project at a glance and switches\n" +
 			"them all onto the same branch.\n\n" +
 			"Run without arguments in a terminal to start the interactive UI.",
+		Args:          cobra.NoArgs,
+		RunE:          runDefault,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		Version:       version,

@@ -93,11 +93,23 @@ type OpResult struct {
 // OK reports whether the operation succeeded.
 func (o OpResult) OK() bool { return o.Err == nil }
 
-// Fetch updates remote-tracking refs everywhere. Read-only, so it fans out.
-func (r *Runner) Fetch(ctx context.Context, repos []model.Repo) []OpResult {
-	results := task.Collect(ctx, repos, r.Concurrency, func(ctx context.Context, repo model.Repo) (string, error) {
+// Fetch updates remote-tracking refs everywhere. Read-only, so it fans out
+// across the worker pool; report, when non-nil, is called as each repository
+// lands, in completion order.
+func (r *Runner) Fetch(ctx context.Context, repos []model.Repo, report func(OpResult)) []OpResult {
+	results := make([]task.Result[string], len(repos))
+	for i := range results {
+		results[i] = task.Result[string]{Index: i, Repo: repos[i]}
+	}
+	stream := task.Stream(ctx, repos, r.Concurrency, func(ctx context.Context, repo model.Repo) (string, error) {
 		return r.fetchOne(ctx, repo)
 	})
+	for result := range stream {
+		results[result.Index] = result
+		if report != nil {
+			report(toOpResult(result))
+		}
+	}
 	return toOpResults(results)
 }
 

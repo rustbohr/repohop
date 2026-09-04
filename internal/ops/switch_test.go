@@ -133,7 +133,7 @@ func TestSwitchFastForwards(t *testing.T) {
 	gitRun(t, other.Path, "push", "-q", "origin", "feat/checkout")
 
 	runner := testRunner()
-	runner.Fetch(ctx(t), []model.Repo{repo})
+	runner.Fetch(ctx(t), []model.Repo{repo}, nil)
 	results := runner.Switch(ctx(t), []model.Repo{repo}, SwitchOptions{Branch: "feat/checkout", Pull: true}, nil)
 
 	if results[0].Outcome != OutcomeSwitched {
@@ -159,7 +159,7 @@ func TestSwitchDivergedBranchIsReportedNotForced(t *testing.T) {
 
 	before := gitRun(t, repo.Path, "rev-parse", "HEAD")
 	runner := testRunner()
-	runner.Fetch(ctx(t), []model.Repo{repo})
+	runner.Fetch(ctx(t), []model.Repo{repo}, nil)
 	results := runner.Switch(ctx(t), []model.Repo{repo}, SwitchOptions{Branch: "feat/checkout", Pull: true}, nil)
 
 	if results[0].Note != "not a fast-forward, not pulled" {

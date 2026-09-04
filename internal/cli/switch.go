@@ -39,7 +39,7 @@ func newSwitchCmd() *cobra.Command {
 			ctx := cmd.Context()
 
 			if cfg.Settings.Fetch && !noFetch {
-				for _, result := range runner.Fetch(ctx, repos) {
+				for _, result := range runner.Fetch(ctx, repos, nil) {
 					if result.Err != nil {
 						cmd.PrintErrf("warning: %s: fetch failed: %v\n", result.Repo.Name, result.Err)
 					}

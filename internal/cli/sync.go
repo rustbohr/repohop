@@ -23,7 +23,7 @@ func newFetchCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			results := ops.New(cfg.Settings.Concurrency).Fetch(cmd.Context(), repos)
+			results := ops.New(cfg.Settings.Concurrency).Fetch(cmd.Context(), repos, nil)
 			return reportOpResults(cmd, results, "fetched")
 		},
 	}

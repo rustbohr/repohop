@@ -75,7 +75,7 @@ func TestFetchNotes(t *testing.T) {
 	}
 	gitRun(t, standalone.Path, "-c", "init.defaultBranch=master", "init", "-q", ".")
 
-	results := testRunner().Fetch(ctx(t), []model.Repo{withRemote, standalone})
+	results := testRunner().Fetch(ctx(t), []model.Repo{withRemote, standalone}, nil)
 
 	if !results[0].OK() || results[0].Note != "" {
 		t.Errorf("api = %+v, want a clean fetch", results[0])
