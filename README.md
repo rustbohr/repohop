@@ -227,9 +227,13 @@ trail. If you report a bug, the last entry is the useful part.
 
 ```sh
 make build
-make test     # go test ./...
-make vet
+make check    # build, vet, test, gofmt and the public-clean scan — what CI runs
 ```
+
+`make check` includes `scripts/check-clean.sh`, which refuses absolute home
+directories, real email addresses and key material. Point
+`REPOHOP_EXTRA_PATTERNS` at a private file of your own patterns to have those
+checked too — that file should live outside this repository.
 
 The git layer is tested against real throwaway repositories, and the TUI with
 `teatest`; both need `git` on PATH.
