@@ -60,11 +60,13 @@ land.
 
 Every action applies to the selected rows, defaulting to all of them.
 
-**Projects** — the first screen when more than one project is configured, and
-the first-run empty state. `enter` opens a project, `n` builds a new one from a
-directory scan, `e` edits it, `d` deletes it after a confirmation. Deleting a
-project only removes the configuration entry; the repositories on disk are
-never touched.
+**Projects** — always the first screen, with the cursor on whichever project
+was open last. `enter` opens a project, `esc` comes back here, `n` builds a new
+one from a directory scan, `e` edits it, `d` deletes it after a confirmation.
+Deleting a project only removes the configuration entry; the repositories on
+disk are never touched.
+
+`repohop --project <name>` skips the list and opens that project directly.
 
 **Editing a project** — `r` renames, `a` adds a repository, `d` removes one,
 `ctrl+s` writes the change. Repository entries are written relative to the

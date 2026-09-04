@@ -16,7 +16,20 @@ type projectList struct {
 	confirm string
 }
 
-func newProjectList(sh *shared) *projectList { return &projectList{sh: sh} }
+func newProjectList(sh *shared) *projectList {
+	list := &projectList{sh: sh}
+
+	// Start on the project that was open last, so the common case is enter.
+	if state, err := config.LoadState(); err == nil && state.ActiveProject != "" {
+		for i, project := range sh.cfg.Projects {
+			if project.Name == state.ActiveProject {
+				list.cursor = i
+				break
+			}
+		}
+	}
+	return list
+}
 
 func (s *projectList) Init() tea.Cmd { return nil }
 

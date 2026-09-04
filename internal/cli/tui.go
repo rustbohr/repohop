@@ -36,15 +36,19 @@ func runDefault(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// An unresolved project is not an error here: the TUI opens on the project
-	// list, which also carries the first-run empty state.
-	project, err := cfg.Resolve(flagProject)
-	if err != nil {
-		var unknown *config.UnknownProjectError
-		if errors.As(err, &unknown) {
+	// The TUI opens on the project list. Only an explicit --project skips it:
+	// asking for one project is a request to go straight there, while starting
+	// repohop plainly should always show what there is to choose from.
+	var project model.Project
+	if flagProject != "" {
+		project, err = cfg.Resolve(flagProject)
+		if err != nil {
+			var unknown *config.UnknownProjectError
+			if errors.As(err, &unknown) {
+				return usageError{err}
+			}
 			return usageError{err}
 		}
-		project = model.Project{}
 	}
 
 	return tui.Run(cmd.Context(), cfg, project)

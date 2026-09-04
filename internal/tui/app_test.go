@@ -496,3 +496,55 @@ func TestProjectsFromADirectoryConfigAreNotEditedHere(t *testing.T) {
 
 	u.quit(t)
 }
+
+func TestStartupShowsTheProjectListEvenWithOneProject(t *testing.T) {
+	cfg, _ := isolatedConfig(t, testProject(t))
+
+	// A single project, and one remembered as active: neither is a reason to
+	// skip the list. Starting repohop always shows what there is to choose
+	// from; only an explicit --project goes straight to a dashboard.
+	if err := config.SaveState(config.State{ActiveProject: "acme"}); err != nil {
+		t.Fatal(err)
+	}
+
+	u := start(t, New(context.Background(), cfg, model.Project{}))
+	u.waitFor(t, "projects")
+	u.waitFor(t, "acme")
+	u.waitFor(t, "enter open")
+
+	// Choosing it opens the dashboard, and esc comes back to the list.
+	u.forget()
+	u.send(tea.KeyMsg{Type: tea.KeyEnter})
+	u.waitFor(t, "dashboard")
+
+	u.forget()
+	u.send(tea.KeyMsg{Type: tea.KeyEsc})
+	u.waitFor(t, "enter open")
+
+	u.quit(t)
+}
+
+func TestProjectListStartsOnTheRememberedProject(t *testing.T) {
+	cfg := testConfig()
+	cfg.Projects = []model.Project{
+		{Name: "alpha", Repos: []model.Repo{{Name: "a", Path: "/r/a"}}},
+		{Name: "beta", Repos: []model.Repo{{Name: "b", Path: "/r/b"}}},
+		{Name: "gamma", Repos: []model.Repo{{Name: "c", Path: "/r/c"}}},
+	}
+	if err := config.SaveState(config.State{ActiveProject: "gamma"}); err != nil {
+		t.Fatal(err)
+	}
+
+	sh := &shared{cfg: cfg, theme: NewTheme(), ctx: context.Background(), width: 80, height: 20}
+	if got := newProjectList(sh).cursor; got != 2 {
+		t.Errorf("cursor = %d, want 2: the list starts on the project that was open last", got)
+	}
+
+	// A project that is no longer configured leaves the cursor at the top.
+	if err := config.SaveState(config.State{ActiveProject: "gone"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := newProjectList(sh).cursor; got != 0 {
+		t.Errorf("cursor = %d, want 0 for a stale remembered project", got)
+	}
+}
