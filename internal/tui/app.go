@@ -72,9 +72,6 @@ type (
 func push(s screen) tea.Cmd  { return func() tea.Msg { return pushMsg{s} } }
 func pop() tea.Msg           { return popMsg{} }
 func flash(s string) tea.Cmd { return func() tea.Msg { return flashMsg(s) } }
-func reportErr(err error) tea.Cmd {
-	return func() tea.Msg { return errMsg{err} }
-}
 
 // New builds the program's root model. When the configuration holds exactly
 // one project the project list is skipped entirely.
