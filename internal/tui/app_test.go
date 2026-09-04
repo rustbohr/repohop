@@ -23,6 +23,35 @@ import (
 // The screen-stack tests drive the real program against real repositories.
 // Golden-file rendering is deliberately avoided: too brittle for the value.
 
+// requireClean fails with the detail needed to diagnose a repository that is
+// dirty when the fixture that built it expects it to be clean. Platforms
+// differ about line endings, executable bits and symlinks, and a mysterious
+// failure three screens later is a bad way to find that out.
+func requireClean(t *testing.T, dir, what string) {
+	t.Helper()
+	status := gitOut(t, dir, "status", "--porcelain=v2", "--untracked-files=no")
+	if strings.TrimSpace(status) == "" {
+		return
+	}
+	t.Fatalf("%s is not clean when it should be:\n%s\nls-files --eol:\n%s\ndiff:\n%s\nconfig:\n%s",
+		what, status,
+		gitOut(t, dir, "ls-files", "--eol"),
+		gitOut(t, dir, "diff"),
+		gitOut(t, dir, "config", "--list", "--show-origin"))
+}
+
+// gitOut runs git and returns its output, failing the test on error.
+func gitOut(t *testing.T, dir string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
+	cmd.Env = append(os.Environ(), "GIT_TERMINAL_PROMPT=0", "LC_ALL=C")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %s in %s: %v\n%s", strings.Join(args, " "), dir, err, out)
+	}
+	return string(out)
+}
+
 func gitRun(t *testing.T, dir string, args ...string) {
 	t.Helper()
 	cmd := exec.Command("git", append([]string{"-C", dir}, args...)...)
@@ -58,6 +87,7 @@ func testProject(t *testing.T) model.Project {
 		if i == 0 {
 			gitRun(t, dir, "branch", "feat/checkout")
 		}
+		requireClean(t, dir, "a freshly committed "+name)
 		repos = append(repos, model.Repo{Name: name, Path: dir})
 	}
 	return model.Project{Name: "acme", Repos: repos}
@@ -697,6 +727,7 @@ func originProject(t *testing.T) (project model.Project, origin string) {
 		gitRun(t, dir, "config", "user.name", "repohop test")
 		gitRun(t, dir, "config", "user.email", "test@example.invalid")
 		gitRun(t, dir, "config", "core.autocrlf", "false")
+		requireClean(t, dir, "a fresh clone of "+name)
 		project.Repos = append(project.Repos, model.Repo{Name: name, Path: dir})
 	}
 	project.Name = "acme"

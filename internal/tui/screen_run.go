@@ -325,7 +325,11 @@ func (r *run) View() string {
 func (r *run) viewChoice() string {
 	t := r.sh.theme
 	var b strings.Builder
-	b.WriteString("\n  " + t.Warning.Render(plural(len(r.dirty), "repository")+" has local changes:") + "\n\n")
+	have := "has"
+	if len(r.dirty) != 1 {
+		have = "have"
+	}
+	b.WriteString("\n  " + t.Warning.Render(plural(len(r.dirty), "repository")+" "+have+" local changes:") + "\n\n")
 	for _, state := range r.dirty {
 		b.WriteString("    " + state.Repo.Name + "  " + t.Muted.Render("on "+state.Status.Ref()) + "\n")
 	}
