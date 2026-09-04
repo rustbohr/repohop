@@ -53,7 +53,11 @@ func newRootCmd(version string) *cobra.Command {
 	root.PersistentFlags().StringVar(&flagProject, "project", "", "project to act on (defaults to the active project)")
 
 	root.SetVersionTemplate("repohop {{.Version}}\n")
-	root.AddCommand(newVersionCmd(version))
+	root.AddCommand(
+		newVersionCmd(version),
+		newProjectsCmd(),
+		newConfigCmd(),
+	)
 
 	return root
 }
