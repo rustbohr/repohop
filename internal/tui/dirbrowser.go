@@ -12,6 +12,11 @@ import (
 // dirBrowser is a small directory chooser: only directories are listed, and
 // the ones that are git working trees are marked, which is exactly what both
 // places that ask for a path care about.
+//
+// enter descends and s chooses the directory currently being looked at, which
+// is the convention every file dialog uses. The alternative — enter choosing
+// the highlighted entry — reads fine until you are two levels above what you
+// want and enter lands you somewhere you did not mean to pick.
 type dirBrowser struct {
 	theme   Theme
 	dir     string
@@ -69,17 +74,13 @@ func (b *dirBrowser) update(msg tea.KeyMsg) (chosen string, done bool) {
 			b.open(parent)
 			b.selectName(previous)
 		}
-	case "right", "l", "tab":
+	case "enter", "right", "l", "tab":
 		if entry, ok := b.current(); ok {
 			b.open(filepath.Join(b.dir, entry.name))
 		}
-	case "enter":
-		if entry, ok := b.current(); ok {
-			return filepath.Join(b.dir, entry.name), true
-		}
-		// An empty directory is still a legitimate choice.
-		return b.dir, true
-	case ".":
+	case "s", ".":
+		// Choosing is always "the directory I am looking at", the way a file
+		// dialog's Select Folder button works.
 		return b.dir, true
 	}
 	return "", false
@@ -105,10 +106,9 @@ func (b *dirBrowser) selectName(name string) {
 func (b *dirBrowser) hints() []Hint {
 	return []Hint{
 		{"↑/↓", "move"},
-		{"→", "look inside"},
+		{"enter", "open"},
 		{"←", "up"},
-		{"enter", "choose"},
-		{".", "choose this directory"},
+		{"s", "choose this directory"},
 		{"esc", "type instead"},
 	}
 }

@@ -76,7 +76,8 @@ the base itself never needs editing.
 Anywhere repohop asks for a directory, `tab` completes against the filesystem
 (and cycles through the candidates once there is nothing left to complete), and
 `ctrl+o` opens a browser that lists directories and marks the ones that are git
-repositories.
+repositories: `enter` opens a directory, `←` goes up, and `s` chooses the one
+you are looking at.
 
 Projects that come from a committed `.repohop.yaml` are shown but not edited
 here — rewriting a file the team shares is not the UI's business. Edit that

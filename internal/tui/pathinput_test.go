@@ -197,20 +197,31 @@ func TestDirBrowserNavigatesAndMarksRepos(t *testing.T) {
 		t.Errorf("cursor is on %q, want the directory we came from", entry.name)
 	}
 
-	// Enter chooses the highlighted directory.
-	chosen, done := b.update(tea.KeyMsg{Type: tea.KeyEnter})
+	// Enter descends rather than choosing, so nothing is picked by accident on
+	// the way to what you wanted.
+	if chosen, done := b.update(tea.KeyMsg{Type: tea.KeyEnter}); done {
+		t.Errorf("enter chose %q instead of opening the directory", chosen)
+	}
+	if filepath.Base(b.dir) != "workspace" {
+		t.Fatalf("enter left the browser in %q, want inside workspace", b.dir)
+	}
+
+	// s chooses the directory being looked at.
+	chosen, done := b.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
 	if !done || chosen != filepath.Join(root, "workspace") {
-		t.Errorf("enter gave %q, %v, want the workspace path", chosen, done)
+		t.Errorf("s gave %q, %v, want the workspace path", chosen, done)
 	}
 }
 
 func TestDirBrowserChoosesTheCurrentDirectory(t *testing.T) {
 	root := completionTree(t)
-	b := newDirBrowser(NewTheme(), root)
 
-	chosen, done := b.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(".")})
-	if !done || chosen != root {
-		t.Errorf("`.` gave %q, %v, want the current directory", chosen, done)
+	for _, key := range []string{"s", "."} {
+		b := newDirBrowser(NewTheme(), root)
+		chosen, done := b.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
+		if !done || chosen != root {
+			t.Errorf("%q gave %q, %v, want the current directory", key, chosen, done)
+		}
 	}
 }
 
@@ -227,8 +238,10 @@ func TestPathInputBrowserRoundTrip(t *testing.T) {
 		t.Errorf("browsing view is not the browser:\n%s", p.View())
 	}
 
+	// Open sources, then choose it: the field takes the browsed path.
 	p.browser.selectName("sources")
 	p.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
 	if p.browsing() {
 		t.Fatal("choosing a directory left the browser open")
 	}
