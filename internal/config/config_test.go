@@ -18,7 +18,16 @@ func isolate(t *testing.T) (configDir, stateDir string) {
 	t.Setenv("XDG_CONFIG_HOME", configDir)
 	t.Setenv("XDG_STATE_HOME", stateDir)
 	t.Setenv("HOME", filepath.Join(root, "home"))
+	t.Setenv("USERPROFILE", filepath.Join(root, "home"))
 	return configDir, stateDir
+}
+
+// rooted builds an absolute path that is absolute on this platform: a leading
+// slash is not enough on Windows, which wants a volume as well.
+func rooted(t *testing.T, path string) string {
+	t.Helper()
+	volume := filepath.VolumeName(t.TempDir())
+	return volume + "/" + path
 }
 
 func write(t *testing.T, path, content string) string {
@@ -49,6 +58,7 @@ func TestLoadMissingConfigIsNotAnError(t *testing.T) {
 func TestRepoSpecFormsAndPathResolution(t *testing.T) {
 	configDir, _ := isolate(t)
 	home := os.Getenv("HOME")
+	elsewhere := rooted(t, "elsewhere/worker")
 	write(t, filepath.Join(configDir, "repohop", "config.yaml"), `
 version: 1
 projects:
@@ -59,7 +69,7 @@ projects:
       - web
       - path: ~/other/place/docs
         name: documentation
-      - path: /absolute/worker
+      - path: `+elsewhere+`
 `)
 
 	cfg, err := Load(Options{Dir: t.TempDir()})
@@ -75,7 +85,7 @@ projects:
 		{"api", filepath.Join(home, "src", "acme", "api")},
 		{"web", filepath.Join(home, "src", "acme", "web")},
 		{"documentation", filepath.Join(home, "other", "place", "docs")},
-		{"worker", filepath.FromSlash("/absolute/worker")},
+		{"worker", filepath.Clean(elsewhere)},
 	}
 	if len(project.Repos) != len(want) {
 		t.Fatalf("got %d repos, want %d", len(project.Repos), len(want))
@@ -109,15 +119,17 @@ projects:
 
 func TestDirectoryConfigMergesAndWins(t *testing.T) {
 	configDir, _ := isolate(t)
+	userBase := rooted(t, "user/acme")
+	teamBase := rooted(t, "team/acme")
 	write(t, filepath.Join(configDir, "repohop", "config.yaml"), `
 defaults:
   concurrency: 4
 projects:
   - name: acme
-    base: /user/acme
+    base: `+userBase+`
     repos: [api]
   - name: personal
-    repos: [/dev/thing]
+    repos: [`+rooted(t, "dev/thing")+`]
 `)
 
 	work := t.TempDir()
@@ -130,10 +142,10 @@ defaults:
   pull: false
 projects:
   - name: acme
-    base: /team/acme
+    base: `+teamBase+`
     repos: [api, web]
   - name: team-only
-    repos: [/team/extra]
+    repos: [`+rooted(t, "team/extra")+`]
 `)
 
 	cfg, err := Load(Options{Dir: nested})
@@ -150,7 +162,7 @@ projects:
 	if len(acme.Repos) != 2 {
 		t.Errorf("acme has %d repos, want the directory config's 2", len(acme.Repos))
 	}
-	if acme.Repos[0].Path != filepath.FromSlash("/team/acme/api") {
+	if acme.Repos[0].Path != filepath.Join(filepath.Clean(teamBase), "api") {
 		t.Errorf("acme base = %q, want the directory config's base", acme.Repos[0].Path)
 	}
 

@@ -172,7 +172,7 @@ func (d *dashboard) key(msg tea.KeyMsg) (screen, tea.Cmd) {
 		return d, push(newRun(d.sh, pullJob(d.selection())))
 	case "e":
 		if d.sh.project.Source != d.sh.cfg.UserPath {
-			return d, flash("defined in " + shortenHome(d.sh.project.Source) + " — edit that file")
+			return d, flash("edit it where it is defined: " + shortenMiddle(d.sh.project.Source, 60))
 		}
 		return d, push(newEditor(d.sh, d.sh.project))
 	case "enter":

@@ -64,6 +64,21 @@ func stripANSI(s string) string {
 	return b.String()
 }
 
+// shortenMiddle fits a path into width cells by dropping the middle, so the
+// root and the filename both survive. A long temporary directory should not
+// be able to push the useful end of a path off the screen.
+func shortenMiddle(path string, width int) string {
+	path = shortenHome(path)
+	runes := []rune(path)
+	if len(runes) <= width || width < 8 {
+		return path
+	}
+	keep := width - 1 // room for the ellipsis
+	head := keep / 3
+	tail := keep - head
+	return string(runes[:head]) + "…" + string(runes[len(runes)-tail:])
+}
+
 // plural renders a count with its unit, e.g. "1 repo" / "4 repos" /
 // "2 repositories".
 func plural(n int, unit string) string {

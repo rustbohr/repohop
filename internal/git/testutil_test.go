@@ -62,6 +62,9 @@ func initRepo(t *testing.T) string {
 	gitRun(t, dir, "config", "user.name", "repohop test")
 	gitRun(t, dir, "config", "user.email", "test@example.invalid")
 	gitRun(t, dir, "config", "commit.gpgsign", "false")
+	// Windows runners default to core.autocrlf=true, which would rewrite the
+	// line endings of files these tests wrote byte for byte.
+	gitRun(t, dir, "config", "core.autocrlf", "false")
 	writeFile(t, dir, "README.md", "hello\n")
 	commit(t, dir, "initial commit")
 	return dir
@@ -88,5 +91,8 @@ func clone(t *testing.T, origin string) string {
 	gitRun(t, dir, "config", "user.name", "repohop test")
 	gitRun(t, dir, "config", "user.email", "test@example.invalid")
 	gitRun(t, dir, "config", "commit.gpgsign", "false")
+	// Windows runners default to core.autocrlf=true, which would rewrite the
+	// line endings of files these tests wrote byte for byte.
+	gitRun(t, dir, "config", "core.autocrlf", "false")
 	return dir
 }

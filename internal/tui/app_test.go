@@ -49,6 +49,7 @@ func testProject(t *testing.T) model.Project {
 		gitRun(t, dir, "-c", "init.defaultBranch=master", "init", "-q", ".")
 		gitRun(t, dir, "config", "user.name", "repohop test")
 		gitRun(t, dir, "config", "user.email", "test@example.invalid")
+		gitRun(t, dir, "config", "core.autocrlf", "false")
 		if err := os.WriteFile(filepath.Join(dir, "README.md"), []byte("hi\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -493,11 +494,11 @@ func TestProjectsFromADirectoryConfigAreNotEditedHere(t *testing.T) {
 
 	u.forget()
 	u.press("e")
-	u.waitFor(t, "edit that file")
+	u.waitFor(t, "edit it where it is defined")
 
 	u.forget()
 	u.press("d")
-	u.waitFor(t, "remove it from")
+	u.waitFor(t, "remove it where it is defined")
 
 	u.quit(t)
 }
@@ -681,6 +682,7 @@ func originProject(t *testing.T) (project model.Project, origin string) {
 	gitRun(t, seed, "-c", "init.defaultBranch=master", "init", "-q", ".")
 	gitRun(t, seed, "config", "user.name", "repohop test")
 	gitRun(t, seed, "config", "user.email", "test@example.invalid")
+	gitRun(t, seed, "config", "core.autocrlf", "false")
 	if err := os.WriteFile(filepath.Join(seed, "README.md"), []byte("hi\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -694,6 +696,7 @@ func originProject(t *testing.T) (project model.Project, origin string) {
 		gitRun(t, root, "clone", "-q", origin, dir)
 		gitRun(t, dir, "config", "user.name", "repohop test")
 		gitRun(t, dir, "config", "user.email", "test@example.invalid")
+		gitRun(t, dir, "config", "core.autocrlf", "false")
 		project.Repos = append(project.Repos, model.Repo{Name: name, Path: dir})
 	}
 	project.Name = "acme"

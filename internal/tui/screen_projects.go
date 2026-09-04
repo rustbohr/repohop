@@ -125,7 +125,7 @@ func (s *projectList) Update(msg tea.Msg) (screen, tea.Cmd) {
 			return s, nil
 		}
 		if !s.editable(project) {
-			return s, flash("defined in " + shortenHome(project.Source) + " — edit that file")
+			return s, flash("edit it where it is defined: " + shortenMiddle(project.Source, 60))
 		}
 		return s, push(newEditor(s.sh, project))
 	case "d":
@@ -134,7 +134,7 @@ func (s *projectList) Update(msg tea.Msg) (screen, tea.Cmd) {
 			return s, nil
 		}
 		if !s.editable(project) {
-			return s, flash("defined in " + shortenHome(project.Source) + " — remove it from that file")
+			return s, flash("remove it where it is defined: " + shortenMiddle(project.Source, 60))
 		}
 		s.confirm = project.Name
 	case "enter":

@@ -30,6 +30,7 @@ jobs:
           git config --global user.email "ci@example.invalid"
           git config --global init.defaultBranch master
           git config --global protocol.file.allow always
+          git config --global core.autocrlf false
 
       - run: go build ./...
       - run: go vet ./...

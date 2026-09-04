@@ -52,6 +52,9 @@ func configure(t *testing.T, dir string) {
 	gitRun(t, dir, "config", "user.name", "repohop test")
 	gitRun(t, dir, "config", "user.email", "test@example.invalid")
 	gitRun(t, dir, "config", "commit.gpgsign", "false")
+	// Windows runners default to core.autocrlf=true, which would rewrite the
+	// line endings of files these tests wrote byte for byte.
+	gitRun(t, dir, "config", "core.autocrlf", "false")
 }
 
 // initOrigin creates a bare repository seeded with master and any extra

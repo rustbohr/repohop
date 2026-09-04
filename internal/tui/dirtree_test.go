@@ -196,3 +196,24 @@ func TestDirTreeIndentationSurvivesGoingUp(t *testing.T) {
 		t.Error("the re-attached branch still points at its old parent")
 	}
 }
+
+func TestShortenMiddleKeepsBothEnds(t *testing.T) {
+	long := "/var/folders/df/djsxfhc17x95674wsm_g8s980000gn/T/TestProjects509516797/001/work/.repohop.yaml"
+	got := shortenMiddle(long, 60)
+	if len([]rune(got)) > 60 {
+		t.Errorf("shortenMiddle produced %d cells, want at most 60: %q", len([]rune(got)), got)
+	}
+	if got[:8] != "/var/fol" {
+		t.Errorf("the start of the path was lost: %q", got)
+	}
+	if !hasSuffix(got, ".repohop.yaml") {
+		t.Errorf("the filename was lost, which is the useful end: %q", got)
+	}
+	if short := shortenMiddle("/tmp/x", 60); short != "/tmp/x" {
+		t.Errorf("a path that fits was altered: %q", short)
+	}
+}
+
+func hasSuffix(s, suffix string) bool {
+	return len(s) >= len(suffix) && s[len(s)-len(suffix):] == suffix
+}
