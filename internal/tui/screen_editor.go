@@ -29,7 +29,7 @@ type editor struct {
 
 	mode   editorMode
 	name   textinput.Model
-	adding *pathInput
+	adding *dirTree
 
 	repos  []model.Repo
 	cursor int
@@ -57,7 +57,7 @@ func (e *editor) Hints() []Hint {
 	case modeRename:
 		return []Hint{{"enter", "accept"}, {"esc", "discard"}}
 	case modeAddRepo:
-		return append(e.adding.Hints(), Hint{"enter", "add"}, Hint{"esc", "back"})
+		return e.adding.hints()
 	default:
 		return []Hint{
 			{"r", "rename"},
@@ -91,17 +91,16 @@ func (e *editor) Update(msg tea.Msg) (screen, tea.Cmd) {
 		return e, cmd
 
 	case modeAddRepo:
-		if cmd, consumed := e.adding.Update(key); consumed {
-			return e, cmd
-		}
-		switch key.String() {
-		case "enter":
-			return e, e.addRepo()
-		case "esc":
+		chosen, done := e.adding.update(key)
+		switch {
+		case !done:
+			return e, nil
+		case chosen == "":
 			e.mode, e.adding = modeList, nil
 			return e, nil
+		default:
+			return e, e.addRepo(chosen)
 		}
-		return e, nil
 	}
 
 	return e.listKey(key)
@@ -120,9 +119,9 @@ func (e *editor) listKey(key tea.KeyMsg) (screen, tea.Cmd) {
 		return e, textinput.Blink
 	case "a":
 		e.mode = modeAddRepo
-		e.adding = newPathInput(e.sh.theme, e.startingPath())
+		e.adding = newDirTree(e.sh.theme, config.ExpandPath(e.startingPath()), "add this repository")
 		e.note = ""
-		return e, textinput.Blink
+		return e, nil
 	case "d":
 		if len(e.repos) > 0 {
 			removed := e.repos[e.cursor]
@@ -148,9 +147,8 @@ func (e *editor) startingPath() string {
 	return "~"
 }
 
-// addRepo validates the typed path and appends it to the list.
-func (e *editor) addRepo() tea.Cmd {
-	path := e.adding.Path()
+// addRepo validates the chosen path and appends it to the list.
+func (e *editor) addRepo(path string) tea.Cmd {
 	for _, repo := range e.repos {
 		if repo.Path == path {
 			e.note = repo.Name + " is already in this project"
@@ -237,13 +235,8 @@ func (e *editor) View() string {
 	if e.mode == modeAddRepo {
 		e.adding.SetHeight(max(e.sh.height-6, 3))
 		var b strings.Builder
-		b.WriteString("\n  Add a repository to " + t.Title.Render(e.name.Value()) + "\n")
-		if !e.adding.browsing() {
-			b.WriteString("  " + t.Muted.Render("tab completes, ctrl+o browses") + "\n\n")
-		} else {
-			b.WriteString("\n")
-		}
-		b.WriteString(e.adding.View())
+		b.WriteString("\n  Add a repository to " + t.Title.Render(e.name.Value()) + "\n\n")
+		b.WriteString(e.adding.view())
 		return b.String()
 	}
 

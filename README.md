@@ -73,11 +73,10 @@ disk are never touched.
 project's `base` when they sit underneath it and absolute when they do not, so
 the base itself never needs editing.
 
-Anywhere repohop asks for a directory, `tab` completes against the filesystem
-(and cycles through the candidates once there is nothing left to complete), and
-`ctrl+o` opens a directory tree — `→` opens a branch, `←` closes it, `-` moves
-the root up a level, `enter` chooses the highlighted directory. Only
-directories are shown, and the ones that are git repositories are highlighted.
+Anywhere repohop asks for a directory you get a tree: `→` opens a branch, `←`
+closes it, `-` moves the root up a level, `enter` chooses the highlighted
+directory. Only directories are shown, and the ones that are git repositories
+are highlighted. There is no path to type.
 
 ```
 ▾ ~/src

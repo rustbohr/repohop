@@ -14,13 +14,15 @@ import (
 // chosen. Only directories are shown, and the ones that are git working trees
 // are marked.
 type dirTree struct {
-	theme  Theme
-	root   *treeNode
-	nodes  []*treeNode // the currently visible rows, rebuilt on every change
-	cursor int
-	offset int
-	height int
-	err    error
+	theme Theme
+	// chooseLabel is what enter does in the hosting screen's terms.
+	chooseLabel string
+	root        *treeNode
+	nodes       []*treeNode // the currently visible rows, rebuilt on every change
+	cursor      int
+	offset      int
+	height      int
+	err         error
 }
 
 // treeNode is one directory in the tree.
@@ -35,8 +37,8 @@ type treeNode struct {
 	parent   *treeNode
 }
 
-func newDirTree(theme Theme, start string) *dirTree {
-	t := &dirTree{theme: theme, height: 12}
+func newDirTree(theme Theme, start, chooseLabel string) *dirTree {
+	t := &dirTree{theme: theme, chooseLabel: chooseLabel, height: 12}
 	t.reroot(start)
 	return t
 }
@@ -218,8 +220,8 @@ func (t *dirTree) hints() []Hint {
 		{"→", "open"},
 		{"←", "close"},
 		{"-", "up a level"},
-		{"enter", "choose"},
-		{"esc", "type instead"},
+		{"enter", t.chooseLabel},
+		{"esc", "cancel"},
 	}
 }
 
@@ -262,7 +264,7 @@ func (t *dirTree) view() string {
 		b.WriteString("  " + theme.Muted.Render(itoa(t.cursor+1)+"/"+itoa(len(t.nodes))) + "\n")
 	}
 	if node := t.current(); node != nil {
-		b.WriteString("  " + theme.Muted.Render("enter chooses ") + shortenHome(node.path))
+		b.WriteString("  " + theme.Muted.Render(t.chooseLabel+": ") + shortenHome(node.path))
 	}
 	return b.String()
 }
@@ -303,6 +305,33 @@ func readDirNodes(parent *treeNode) ([]*treeNode, error) {
 	}
 	sort.Slice(children, func(i, j int) bool { return children[i].name < children[j].name })
 	return children, nil
+}
+
+// isDirEntry reports whether an entry is a directory, following symlinks.
+func isDirEntry(dir string, entry os.DirEntry) bool {
+	if entry.IsDir() {
+		return true
+	}
+	if entry.Type()&os.ModeSymlink == 0 {
+		return false
+	}
+	info, err := os.Stat(filepath.Join(dir, entry.Name()))
+	return err == nil && info.IsDir()
+}
+
+// shortenHome writes a path the way a person would type it.
+func shortenHome(path string) string {
+	home, err := os.UserHomeDir()
+	if err != nil || home == "" {
+		return path
+	}
+	if path == home {
+		return "~"
+	}
+	if rest, ok := strings.CutPrefix(path, home+string(filepath.Separator)); ok {
+		return "~" + string(filepath.Separator) + rest
+	}
+	return path
 }
 
 // isGitRepo reports whether a directory holds a .git entry.

@@ -394,10 +394,12 @@ func TestEditorAddsARepositoryByPath(t *testing.T) {
 	u.press("a")
 	u.waitFor(t, "Add a repository")
 
-	// Type the parent directory and let tab complete the repository name.
+	// The tree opens on the directory the project's repositories live in;
+	// walk down to web and choose it.
+	u.waitFor(t, "web")
 	u.forget()
-	u.tm.Type(filepath.Dir(project.Repos[1].Path) + string(filepath.Separator) + "we")
-	u.send(tea.KeyMsg{Type: tea.KeyTab})
+	u.send(tea.KeyMsg{Type: tea.KeyDown})
+	u.send(tea.KeyMsg{Type: tea.KeyDown})
 	u.send(tea.KeyMsg{Type: tea.KeyEnter})
 	u.waitFor(t, "added web")
 

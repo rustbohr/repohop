@@ -28,7 +28,7 @@ const (
 type setup struct {
 	sh   *shared
 	step setupStep
-	path *pathInput
+	tree *dirTree
 	name textinput.Model
 	spin spinner.Model
 
@@ -56,7 +56,7 @@ func newSetup(sh *shared) *setup {
 
 	return &setup{
 		sh:       sh,
-		path:     newPathInput(sh.theme, defaultScanRoot()),
+		tree:     newDirTree(sh.theme, config.ExpandPath(defaultScanRoot()), "scan this directory"),
 		name:     name,
 		spin:     spin,
 		selected: map[int]bool{},
@@ -74,7 +74,8 @@ func defaultScanRoot() string {
 	return "~"
 }
 
-// capturesKeys keeps the app's global keys out of the text fields.
+// capturesKeys keeps the app's global keys out of this screen's own handling
+// of esc and of the name field.
 func (s *setup) capturesKeys() bool {
 	return s.step == stepRoot || s.step == stepName
 }
@@ -86,7 +87,7 @@ func (s *setup) Title() string { return "set up a project" }
 func (s *setup) Hints() []Hint {
 	switch s.step {
 	case stepRoot:
-		return append(s.path.Hints(), Hint{"enter", "scan"}, Hint{"esc", "cancel"})
+		return s.tree.hints()
 	case stepScanning:
 		return []Hint{{"esc", "cancel"}}
 	case stepChoose:
@@ -125,17 +126,16 @@ func (s *setup) Update(msg tea.Msg) (screen, tea.Cmd) {
 func (s *setup) key(msg tea.KeyMsg) (screen, tea.Cmd) {
 	switch s.step {
 	case stepRoot:
-		if cmd, consumed := s.path.Update(msg); consumed {
-			return s, cmd
-		}
-		switch msg.String() {
-		case "enter":
-			s.step = stepScanning
-			return s, tea.Batch(s.spin.Tick, s.scan(s.path.Path()))
-		case "esc":
+		chosen, done := s.tree.update(msg)
+		switch {
+		case !done:
+			return s, nil
+		case chosen == "":
 			return s, pop
+		default:
+			s.step = stepScanning
+			return s, tea.Batch(s.spin.Tick, s.scan(chosen))
 		}
-		return s, nil
 
 	case stepChoose:
 		switch msg.String() {
@@ -236,16 +236,13 @@ func (s *setup) View() string {
 	t := s.sh.theme
 	switch s.step {
 	case stepRoot:
-		s.path.SetHeight(max(s.sh.height-5, 3))
-		if s.path.browsing() {
-			return "\n" + s.path.View()
-		}
+		s.tree.SetHeight(max(s.sh.height-5, 3))
 		return strings.Join([]string{
 			"",
 			"  Which directory holds your repositories?",
 			"  " + t.Muted.Render("repohop looks up to "+itoa(scan.DefaultDepth)+" levels below it."),
 			"",
-			s.path.View(),
+			s.tree.view(),
 		}, "\n")
 
 	case stepScanning:
