@@ -54,10 +54,31 @@ land.
 | `s` | switch (opens the branch picker) |
 | `f` / `p` | fetch / pull |
 | `r` | refresh |
+| `e` | edit this project |
 | `?` | help |
 | `q` | quit |
 
 Every action applies to the selected rows, defaulting to all of them.
+
+**Projects** — the first screen when more than one project is configured, and
+the first-run empty state. `enter` opens a project, `n` builds a new one from a
+directory scan, `e` edits it, `d` deletes it after a confirmation. Deleting a
+project only removes the configuration entry; the repositories on disk are
+never touched.
+
+**Editing a project** — `r` renames, `a` adds a repository, `d` removes one,
+`ctrl+s` writes the change. Repository entries are written relative to the
+project's `base` when they sit underneath it and absolute when they do not, so
+the base itself never needs editing.
+
+Anywhere repohop asks for a directory, `tab` completes against the filesystem
+(and cycles through the candidates once there is nothing left to complete), and
+`ctrl+o` opens a browser that lists directories and marks the ones that are git
+repositories.
+
+Projects that come from a committed `.repohop.yaml` are shown but not edited
+here — rewriting a file the team shares is not the UI's business. Edit that
+file instead.
 
 **Branch picker** — type to fuzzy-filter the union of local and `origin`
 branches across the selected repositories. The preview shows which repos carry
@@ -106,8 +127,18 @@ repohop switch <branch> [--no-fetch] [--no-pull] [--stash] [--only a,b]
 repohop fetch  [--project NAME]
 repohop pull   [--project NAME]
 repohop projects
+repohop projects add <name> [--base DIR] [--repo PATH]... [--scan DIR] [--depth N]
+repohop projects rm  <name>
+repohop projects use <name>
 repohop config path
 repohop version
+```
+
+`projects add` takes a whole directory tree at once, which is the
+non-interactive equivalent of the setup flow:
+
+```sh
+repohop projects add acme --scan ~/src/acme
 ```
 
 Exit codes: `0` all good · `1` partial failure (some repository did not switch
@@ -151,6 +182,10 @@ projects:
 
 `~` and `$VAR` are expanded in every path. A repository that has vanished or is
 not a git repo is shown as such, never silently dropped.
+
+When repohop writes to a config file it edits the YAML in place: comments, key
+order and any keys it does not recognise survive, and only the project being
+changed is rewritten. Blank lines between top-level keys are not preserved.
 
 ## Development
 

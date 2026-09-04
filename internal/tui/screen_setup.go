@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -25,10 +26,11 @@ const (
 // setup builds a project from repositories found on disk, so a new user is
 // productive without hand-writing config.
 type setup struct {
-	sh    *shared
-	step  setupStep
-	input textinput.Model
-	spin  spinner.Model
+	sh   *shared
+	step setupStep
+	path *pathInput
+	name textinput.Model
+	spin spinner.Model
 
 	root     string
 	found    []scan.Repo
@@ -45,15 +47,36 @@ type scanDoneMsg struct {
 }
 
 func newSetup(sh *shared) *setup {
-	input := textinput.New()
-	input.Prompt = "  "
-	input.Placeholder = "~/src"
-	input.Focus()
+	name := textinput.New()
+	name.Prompt = "  "
+	name.Placeholder = "project name"
 
 	spin := spinner.New(spinner.WithSpinner(spinner.MiniDot))
 	spin.Style = sh.theme.Spinner
 
-	return &setup{sh: sh, input: input, spin: spin, selected: map[int]bool{}}
+	return &setup{
+		sh:       sh,
+		path:     newPathInput(sh.theme, defaultScanRoot()),
+		name:     name,
+		spin:     spin,
+		selected: map[int]bool{},
+	}
+}
+
+// defaultScanRoot is the directory the path field starts on: the first of the
+// usual homes for checkouts that actually exists, else the home directory.
+func defaultScanRoot() string {
+	for _, candidate := range []string{"~/src", "~/dev", "~/code", "~/projects"} {
+		if info, err := os.Stat(config.ExpandPath(candidate)); err == nil && info.IsDir() {
+			return candidate
+		}
+	}
+	return "~"
+}
+
+// capturesKeys keeps the app's global keys out of the text fields.
+func (s *setup) capturesKeys() bool {
+	return s.step == stepRoot || s.step == stepName
 }
 
 func (s *setup) Init() tea.Cmd { return textinput.Blink }
@@ -62,12 +85,14 @@ func (s *setup) Title() string { return "set up a project" }
 
 func (s *setup) Hints() []Hint {
 	switch s.step {
-	case stepChoose:
-		return []Hint{{"space", "select"}, {"a", "all"}, {"enter", "continue"}, {"esc", "back"}}
+	case stepRoot:
+		return append(s.path.Hints(), Hint{"enter", "scan"}, Hint{"esc", "cancel"})
 	case stepScanning:
 		return []Hint{{"esc", "cancel"}}
+	case stepChoose:
+		return []Hint{{"space", "select"}, {"a", "all"}, {"enter", "continue"}, {"esc", "back"}}
 	default:
-		return []Hint{{"enter", "continue"}, {"esc", "cancel"}}
+		return []Hint{{"enter", "save"}, {"esc", "back"}}
 	}
 }
 
@@ -100,17 +125,17 @@ func (s *setup) Update(msg tea.Msg) (screen, tea.Cmd) {
 func (s *setup) key(msg tea.KeyMsg) (screen, tea.Cmd) {
 	switch s.step {
 	case stepRoot:
-		if msg.String() == "enter" {
-			root := strings.TrimSpace(s.input.Value())
-			if root == "" {
-				root = s.input.Placeholder
-			}
-			s.step = stepScanning
-			return s, tea.Batch(s.spin.Tick, s.scan(config.ExpandPath(root)))
+		if cmd, consumed := s.path.Update(msg); consumed {
+			return s, cmd
 		}
-		var cmd tea.Cmd
-		s.input, cmd = s.input.Update(msg)
-		return s, cmd
+		switch msg.String() {
+		case "enter":
+			s.step = stepScanning
+			return s, tea.Batch(s.spin.Tick, s.scan(s.path.Path()))
+		case "esc":
+			return s, pop
+		}
+		return s, nil
 
 	case stepChoose:
 		switch msg.String() {
@@ -128,19 +153,25 @@ func (s *setup) key(msg tea.KeyMsg) (screen, tea.Cmd) {
 				return s, flash("select at least one repository")
 			}
 			s.step = stepName
-			s.input.SetValue(filepath.Base(s.root))
-			s.input.Placeholder = "project name"
-			s.input.CursorEnd()
+			if s.name.Value() == "" {
+				s.name.SetValue(filepath.Base(s.root))
+			}
+			s.name.Focus()
+			s.name.CursorEnd()
 			return s, textinput.Blink
 		}
 		return s, nil
 
 	case stepName:
-		if msg.String() == "enter" {
+		switch msg.String() {
+		case "enter":
 			return s, s.save()
+		case "esc":
+			s.step = stepChoose
+			return s, nil
 		}
 		var cmd tea.Cmd
-		s.input, cmd = s.input.Update(msg)
+		s.name, cmd = s.name.Update(msg)
 		return s, cmd
 	}
 	return s, nil
@@ -172,7 +203,7 @@ func (s *setup) count() int {
 
 // save writes the project into the user's config file and opens it.
 func (s *setup) save() tea.Cmd {
-	name := strings.TrimSpace(s.input.Value())
+	name := strings.TrimSpace(s.name.Value())
 	if name == "" {
 		return flash("the project needs a name")
 	}
@@ -192,9 +223,8 @@ func (s *setup) save() tea.Cmd {
 			return errMsg{err}
 		}
 		// Reload so the project list reflects what is now on disk.
-		if cfg, err := config.Load(config.Options{}); err == nil {
-			*s.sh.cfg = *cfg
-			if saved, ok := cfg.Project(name); ok {
+		if err := s.sh.cfg.Reload(); err == nil {
+			if saved, ok := s.sh.cfg.Project(name); ok {
 				project = saved
 			}
 		}
@@ -206,12 +236,15 @@ func (s *setup) View() string {
 	t := s.sh.theme
 	switch s.step {
 	case stepRoot:
+		if s.path.browsing() {
+			return "\n" + s.path.View()
+		}
 		return strings.Join([]string{
 			"",
 			"  Which directory holds your repositories?",
 			"  " + t.Muted.Render("repohop looks up to "+itoa(scan.DefaultDepth)+" levels below it."),
 			"",
-			s.input.View(),
+			s.path.View(),
 		}, "\n")
 
 	case stepScanning:
@@ -226,7 +259,7 @@ func (s *setup) View() string {
 			"  Name this project.",
 			"  " + t.Muted.Render(plural(s.count(), "repository")+" under "+s.root),
 			"",
-			s.input.View(),
+			s.name.View(),
 			"",
 			"  " + t.Muted.Render("saved to "+s.sh.cfg.UserPath),
 		}, "\n")

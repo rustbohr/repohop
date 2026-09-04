@@ -25,6 +25,20 @@ type screen interface {
 	Hints() []Hint
 }
 
+// keyCapturer is implemented by screens that are taking text input. While one
+// says it is capturing, the app forwards every key except ctrl+c straight to
+// it, so a field can contain a "?" and esc can mean "leave this field" rather
+// than "leave this screen".
+type keyCapturer interface {
+	capturesKeys() bool
+}
+
+// capturing reports whether the top screen is currently taking raw keys.
+func (a *App) capturing() bool {
+	capturer, ok := a.top().(keyCapturer)
+	return ok && capturer.capturesKeys()
+}
+
 // Hint is one "key — what it does" pair in the footer and the help overlay.
 type Hint struct {
 	Key  string
@@ -67,6 +81,10 @@ type (
 	projectChosenMsg struct{ project model.Project }
 	// refreshMsg asks the screen underneath to reload after an operation.
 	refreshMsg struct{}
+	// projectSavedMsg reports that a project was written to the config file.
+	projectSavedMsg struct{ previous, name string }
+	// projectDeletedMsg reports that a project was removed from the config.
+	projectDeletedMsg struct{ name string }
 )
 
 func push(s screen) tea.Cmd  { return func() tea.Msg { return pushMsg{s} } }
@@ -138,6 +156,35 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.stack = append(a.stack, newDashboard(a.sh))
 		return a, a.top().Init()
 
+	case projectSavedMsg:
+		if err := a.sh.cfg.Reload(); err != nil {
+			a.err = err
+			return a, nil
+		}
+		if msg.previous != msg.name {
+			if state, err := config.LoadState(); err == nil && state.ActiveProject == msg.previous {
+				_ = config.SaveState(config.State{ActiveProject: msg.name})
+			}
+		}
+		if saved, ok := a.sh.cfg.Project(msg.name); ok && a.sh.project.Name == msg.previous {
+			a.sh.project = saved
+		}
+		a.stack = a.stack[:len(a.stack)-1]
+		return a, tea.Batch(func() tea.Msg { return refreshMsg{} }, flash("saved "+msg.name))
+
+	case projectDeletedMsg:
+		if err := a.sh.cfg.Reload(); err != nil {
+			a.err = err
+			return a, nil
+		}
+		if state, err := config.LoadState(); err == nil && state.ActiveProject == msg.name {
+			_ = config.SaveState(config.State{})
+		}
+		if a.sh.project.Name == msg.name {
+			a.sh.project = model.Project{}
+		}
+		return a, flash("deleted " + msg.name)
+
 	case flashMsg:
 		a.flash = string(msg)
 		return a, nil
@@ -154,9 +201,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 // globalKey handles the keys that mean the same thing on every screen.
 func (a *App) globalKey(msg tea.KeyMsg) (tea.Cmd, bool) {
-	switch msg.String() {
-	case "ctrl+c":
+	if msg.String() == "ctrl+c" {
 		return tea.Quit, true
+	}
+	if a.capturing() && !a.help {
+		return nil, false
+	}
+
+	switch msg.String() {
 	case "?":
 		a.help = !a.help
 		return nil, true

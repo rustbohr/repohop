@@ -301,3 +301,198 @@ func TestFetchFromTheDashboardReportsPerRepository(t *testing.T) {
 
 	u.quit(t)
 }
+
+// isolatedConfig writes a config file for a project and loads it, with the XDG
+// environment pointed at temporary directories so the tests never touch the
+// developer's own config or remembered state.
+func isolatedConfig(t *testing.T, project model.Project) (*config.Config, string) {
+	t.Helper()
+	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(root, "state"))
+
+	path := filepath.Join(root, "config", "repohop", "config.yaml")
+	spec := config.ProjectSpec{Name: project.Name}
+	for _, repo := range project.Repos {
+		spec.Repos = append(spec.Repos, config.RepoSpec{Path: repo.Path})
+	}
+	if err := config.AddProject(path, spec); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := config.Load(config.Options{Dir: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Projects) != 1 {
+		t.Fatalf("loaded %v, want the one project just written", cfg.Names())
+	}
+	return cfg, path
+}
+
+func TestEditorRenamesRemovesAndSaves(t *testing.T) {
+	project := testProject(t)
+	cfg, path := isolatedConfig(t, project)
+
+	// Starting with no project resolved opens the project list.
+	u := start(t, New(context.Background(), cfg, model.Project{}))
+	u.waitFor(t, "acme")
+
+	u.forget()
+	u.press("e")
+	u.waitFor(t, "REPOSITORIES")
+	u.waitFor(t, "api")
+
+	// Rename: the field takes every key, including the ones the app would
+	// otherwise treat as global.
+	u.forget()
+	u.press("r")
+	u.tm.Type("-corp?")
+	u.waitFor(t, "acme-corp?")
+	u.send(tea.KeyMsg{Type: tea.KeyBackspace})
+	u.send(tea.KeyMsg{Type: tea.KeyEnter})
+
+	// Remove the second repository, then save.
+	u.forget()
+	u.send(tea.KeyMsg{Type: tea.KeyDown})
+	u.press("d")
+	u.waitFor(t, "removed web")
+
+	u.forget()
+	u.send(tea.KeyMsg{Type: tea.KeyCtrlS})
+	u.waitFor(t, "saved acme-corp")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	if !strings.Contains(got, "name: acme-corp") {
+		t.Errorf("config was not renamed:\n%s", got)
+	}
+	if strings.Contains(got, project.Repos[1].Path) {
+		t.Errorf("removed repository is still in the config:\n%s", got)
+	}
+	if !strings.Contains(got, project.Repos[0].Path) {
+		t.Errorf("kept repository disappeared:\n%s", got)
+	}
+
+	u.quit(t)
+}
+
+func TestEditorAddsARepositoryByPath(t *testing.T) {
+	project := testProject(t)
+	cfg, path := isolatedConfig(t, model.Project{Name: "acme", Repos: project.Repos[:1]})
+
+	u := start(t, New(context.Background(), cfg, model.Project{}))
+	u.waitFor(t, "acme")
+	u.forget()
+	u.press("e")
+	u.waitFor(t, "REPOSITORY")
+
+	u.forget()
+	u.press("a")
+	u.waitFor(t, "Add a repository")
+
+	// Type the parent directory and let tab complete the repository name.
+	u.forget()
+	u.tm.Type(filepath.Dir(project.Repos[1].Path) + string(filepath.Separator) + "we")
+	u.send(tea.KeyMsg{Type: tea.KeyTab})
+	u.send(tea.KeyMsg{Type: tea.KeyEnter})
+	u.waitFor(t, "added web")
+
+	u.forget()
+	u.send(tea.KeyMsg{Type: tea.KeyCtrlS})
+	u.waitFor(t, "saved acme")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), project.Repos[1].Path) {
+		t.Errorf("added repository is not in the config:\n%s", data)
+	}
+
+	u.quit(t)
+}
+
+func TestProjectListDeletesWithConfirmation(t *testing.T) {
+	cfg, path := isolatedConfig(t, testProject(t))
+	u := start(t, New(context.Background(), cfg, model.Project{}))
+	u.waitFor(t, "acme")
+
+	u.forget()
+	u.press("d")
+	u.waitFor(t, "delete project acme?")
+
+	u.forget()
+	u.press("y")
+	u.waitFor(t, "deleted acme")
+	u.waitFor(t, "No projects configured yet")
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(data), "acme") {
+		t.Errorf("project is still in the config file:\n%s", data)
+	}
+
+	u.quit(t)
+}
+
+func TestProjectListCancelsADelete(t *testing.T) {
+	cfg, path := isolatedConfig(t, testProject(t))
+	u := start(t, New(context.Background(), cfg, model.Project{}))
+	u.waitFor(t, "acme")
+
+	u.forget()
+	u.press("d")
+	u.waitFor(t, "delete project acme?")
+
+	// Any key other than y keeps the project, and a later y is not a delayed
+	// confirmation of a question that is no longer being asked.
+	u.press("x")
+	u.press("y")
+	u.quit(t)
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "acme") {
+		t.Errorf("a cancelled delete removed the project anyway:\n%s", data)
+	}
+}
+
+func TestProjectsFromADirectoryConfigAreNotEditedHere(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(root, "config"))
+	t.Setenv("XDG_STATE_HOME", filepath.Join(root, "state"))
+
+	work := filepath.Join(root, "work")
+	if err := os.MkdirAll(work, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(work, config.DirConfigName),
+		[]byte("projects:\n  - name: team\n    repos: [/r/api]\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(config.Options{Dir: work})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	u := start(t, New(context.Background(), cfg, model.Project{}))
+	u.waitFor(t, "read-only here")
+
+	u.forget()
+	u.press("e")
+	u.waitFor(t, "edit that file")
+
+	u.forget()
+	u.press("d")
+	u.waitFor(t, "remove it from")
+
+	u.quit(t)
+}

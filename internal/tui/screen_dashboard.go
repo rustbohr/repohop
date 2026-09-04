@@ -103,6 +103,7 @@ func (d *dashboard) Hints() []Hint {
 		{"f", "fetch"},
 		{"p", "pull"},
 		{"r", "refresh"},
+		{"e", "edit project"},
 		{"q", "quit"},
 	}
 }
@@ -169,6 +170,11 @@ func (d *dashboard) key(msg tea.KeyMsg) (screen, tea.Cmd) {
 		return d, push(newRun(d.sh, fetchJob(d.selection())))
 	case "p":
 		return d, push(newRun(d.sh, pullJob(d.selection())))
+	case "e":
+		if d.sh.project.Source != d.sh.cfg.UserPath {
+			return d, flash("defined in " + shortenHome(d.sh.project.Source) + " — edit that file")
+		}
+		return d, push(newEditor(d.sh, d.sh.project))
 	case "enter":
 		return d, flash("repo detail is not in v1 yet — use lazygit or gitui for per-repo work")
 	}
