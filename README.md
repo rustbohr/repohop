@@ -225,8 +225,11 @@ leaves no state and no log.
 
 ## Uninstalling
 
-repohop is one binary and three files under your home directory; it installs
-nothing else and touches no repository of yours.
+repohop is one binary plus three files under your home directory. It installs no
+service, edits no shell profile, and never touches your repositories — removing
+it cannot lose your work.
+
+**Linux and macOS**
 
 ```sh
 rm "$(command -v repohop)"        # the binary, wherever you put it
@@ -234,12 +237,29 @@ rm -rf ~/.config/repohop          # your projects
 rm -rf ~/.local/state/repohop     # remembered project and log
 ```
 
-If you installed with `go install`, the source also sits in the module cache:
-`go clean -modcache` clears that for every module, or delete
-`$(go env GOMODCACHE)/github.com/rustbohr` for this one alone.
+macOS uses the same paths as Linux — repohop deliberately keeps its config in
+`~/.config` rather than `~/Library/Application Support`, so a config file is
+portable between your machines.
 
-Keep `~/.config/repohop` if you might come back — reinstalling picks your
-projects up again.
+**Windows** (PowerShell)
+
+```powershell
+Remove-Item (Get-Command repohop).Source
+Remove-Item -Recurse -Force "$env:AppData\repohop"
+Remove-Item -Recurse -Force "$env:LocalAppData\repohop"
+```
+
+**If you installed with `go install`**, the source also sits in the module
+cache. `go clean -modcache` clears it for every module you have ever built;
+to remove only this one, delete `$(go env GOMODCACHE)/github.com/rustbohr`.
+
+**If you installed shell completions** yourself — repohop does not do this for
+you — remove the file you created, typically
+`/etc/bash_completion.d/repohop`, `~/.local/share/bash-completion/completions/repohop`,
+or the zsh equivalent on your `$fpath`.
+
+Keep `~/.config/repohop` if you might come back: reinstalling picks your
+projects up again exactly as they were.
 
 ## When something goes wrong
 
