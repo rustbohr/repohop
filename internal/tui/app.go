@@ -5,11 +5,14 @@ package tui
 import (
 	"context"
 	"fmt"
+	"runtime/debug"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/rustbohr/repohop/internal/config"
+	"github.com/rustbohr/repohop/internal/logging"
 	"github.com/rustbohr/repohop/internal/model"
 	"github.com/rustbohr/repohop/internal/ops"
 )
@@ -65,6 +68,15 @@ type App struct {
 	help  bool
 	flash string
 	err   error
+	crash *crash
+}
+
+// crash is a panic repohop caught and turned into a message. A bug in one
+// screen should cost the user their place, not their session.
+type crash struct {
+	when  time.Time
+	doing string
+	value any
 }
 
 // Messages the screens send back to the app.
@@ -117,6 +129,11 @@ func New(ctx context.Context, cfg *config.Config, project model.Project) *App {
 func Run(ctx context.Context, cfg *config.Config, project model.Project) error {
 	program := tea.NewProgram(New(ctx, cfg, project), tea.WithAltScreen(), tea.WithContext(ctx))
 	_, err := program.Run()
+	if err != nil {
+		// A panic that escapes a command goroutine never reaches the app's own
+		// recovery, so record what little is known about it here.
+		logging.Log().Error("running the interface", err)
+	}
 	return err
 }
 
@@ -124,7 +141,25 @@ func (a *App) Init() tea.Cmd { return a.top().Init() }
 
 func (a *App) top() screen { return a.stack[len(a.stack)-1] }
 
-func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+func (a *App) Update(msg tea.Msg) (next tea.Model, cmd tea.Cmd) {
+	defer func() {
+		if r := recover(); r != nil {
+			a.recordCrash("handling "+msgName(msg), r)
+			next, cmd = a, nil
+		}
+	}()
+
+	// While a crash is on screen, the next key dismisses it.
+	if a.crash != nil {
+		if key, ok := msg.(tea.KeyMsg); ok {
+			if key.String() == "ctrl+c" {
+				return a, tea.Quit
+			}
+			a.crash = nil
+			return a, nil
+		}
+	}
+
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		a.sh.width = msg.Width
@@ -191,6 +226,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 	case errMsg:
 		a.err = msg.err
+		logging.Log().Error("on the "+a.top().Title()+" screen", msg.err)
 		return a, nil
 	}
 
@@ -233,12 +269,68 @@ func (a *App) globalKey(msg tea.KeyMsg) (tea.Cmd, bool) {
 // chromeHeight is the header plus footer the app draws around every screen.
 const chromeHeight = 4
 
-func (a *App) View() string {
-	body := a.top().View()
-	if a.help {
+func (a *App) View() (out string) {
+	defer func() {
+		if r := recover(); r != nil {
+			a.recordCrash("drawing the "+a.top().Title()+" screen", r)
+			out = strings.Join([]string{a.header(), a.crashView(), a.footer()}, "\n")
+		}
+	}()
+
+	var body string
+	switch {
+	case a.crash != nil:
+		body = a.crashView()
+	case a.help:
 		body = a.helpOverlay()
+	default:
+		body = a.top().View()
 	}
 	return strings.Join([]string{a.header(), body, a.footer()}, "\n")
+}
+
+// recordCrash logs a recovered panic and leaves the app on a screen the user
+// can carry on from.
+func (a *App) recordCrash(doing string, recovered any) {
+	logging.Log().Panic(doing, recovered, debug.Stack())
+	a.crash = &crash{when: time.Now(), doing: doing, value: recovered}
+	a.help = false
+
+	// The screen that failed is the one to leave, if there is somewhere to go.
+	if len(a.stack) > 1 {
+		a.stack = a.stack[:len(a.stack)-1]
+	}
+}
+
+// crashView explains what happened in the terms the user needs: what broke,
+// that it is not their fault, where the details are, and how to carry on.
+func (a *App) crashView() string {
+	t := a.sh.theme
+	lines := []string{
+		"",
+		"  " + t.Failure.Render("Something went wrong "+a.crash.doing) + ".",
+		"",
+		"  " + fmt.Sprint(a.crash.value),
+		"",
+		"  " + t.Muted.Render("This is a bug in repohop, not something you did."),
+	}
+	if path := logging.Log().Path(); path != "" {
+		lines = append(lines,
+			"  "+t.Muted.Render("The details are in ")+shortenHome(path))
+	}
+	lines = append(lines,
+		"",
+		"  "+t.Key.Render("any key")+" "+t.Footer.Render("carry on")+
+			t.Footer.Render(" · ")+t.Key.Render("ctrl+c")+" "+t.Footer.Render("quit"))
+	return strings.Join(lines, "\n")
+}
+
+// msgName describes a message for the log without dragging in its contents.
+func msgName(msg tea.Msg) string {
+	if key, ok := msg.(tea.KeyMsg); ok {
+		return "key " + key.String()
+	}
+	return fmt.Sprintf("%T", msg)
 }
 
 func (a *App) header() string {
@@ -256,6 +348,9 @@ func (a *App) header() string {
 
 func (a *App) footer() string {
 	t := a.sh.theme
+	if a.crash != nil {
+		return t.Failure.Render("recovered from an error")
+	}
 	if a.err != nil {
 		return t.Failure.Render("error: " + a.err.Error())
 	}

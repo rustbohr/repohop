@@ -4,6 +4,7 @@ import (
 	"text/tabwriter"
 
 	"github.com/rustbohr/repohop/internal/config"
+	"github.com/rustbohr/repohop/internal/logging"
 	"github.com/rustbohr/repohop/internal/scan"
 	"github.com/spf13/cobra"
 )
@@ -77,6 +78,9 @@ func newConfigCmd() *cobra.Command {
 				fmtLine(tw, "directory", cfg.DirPath, "")
 			}
 			fmtLine(tw, "state", statePath, existsNote(statePath))
+			if logPath := logging.Path(); logPath != "" {
+				fmtLine(tw, "log", logPath, existsNote(logPath))
+			}
 			return tw.Flush()
 		},
 	})

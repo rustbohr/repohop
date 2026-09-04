@@ -52,6 +52,12 @@ func (s *projectList) Hints() []Hint {
 	}
 }
 
+// clamp keeps the cursor inside the list, whatever has happened to the
+// configuration since the last key.
+func (s *projectList) clamp() {
+	s.cursor = min(max(s.cursor, 0), max(len(s.sh.cfg.Projects)-1, 0))
+}
+
 // current is the highlighted project.
 func (s *projectList) current() (model.Project, bool) {
 	if s.cursor < 0 || s.cursor >= len(s.sh.cfg.Projects) {
@@ -72,6 +78,11 @@ func (s *projectList) Update(msg tea.Msg) (screen, tea.Cmd) {
 	if !ok {
 		return s, nil
 	}
+
+	// The list is rebuilt from the config whenever it changes underneath —
+	// deleting a project is the obvious case — so the cursor is re-checked on
+	// every key rather than trusted from last time.
+	s.clamp()
 	projects := s.sh.cfg.Projects
 
 	if s.confirm != "" {
@@ -127,10 +138,10 @@ func (s *projectList) Update(msg tea.Msg) (screen, tea.Cmd) {
 		}
 		s.confirm = project.Name
 	case "enter":
-		if len(projects) == 0 {
+		project, ok := s.current()
+		if !ok {
 			return s, push(newSetup(s.sh))
 		}
-		project := projects[s.cursor]
 		return s, func() tea.Msg { return projectChosenMsg{project} }
 	}
 	return s, nil
@@ -157,6 +168,8 @@ func (s *projectList) View() string {
 		names = append(names, project.Name)
 	}
 	nameWidth := columnWidth(names, 8, 32)
+
+	s.clamp()
 
 	var b strings.Builder
 	b.WriteString("\n")

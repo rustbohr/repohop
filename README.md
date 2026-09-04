@@ -198,6 +198,22 @@ When repohop writes to a config file it edits the YAML in place: comments, key
 order and any keys it does not recognise survive, and only the project being
 changed is rewritten. Blank lines between top-level keys are not preserved.
 
+## When something goes wrong
+
+A crash inside the interface is caught, explained on screen, and written to a
+log file with its stack; the program keeps running so you do not lose your
+place. Failures that repohop expects — a repository that has moved, a checkout
+that git refused — are reported in the interface and logged too.
+
+```sh
+repohop config path     # includes the log's location
+```
+
+The log lives at `$XDG_STATE_HOME/repohop/repohop.log`, falling back to
+`~/.local/state/repohop/repohop.log`. It is capped at 1 MiB and started again
+when it grows past that — it is a record of what just went wrong, not an audit
+trail. If you report a bug, the last entry is the useful part.
+
 ## Development
 
 ```sh

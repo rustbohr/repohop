@@ -14,6 +14,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/rustbohr/repohop/internal/config"
+	"github.com/rustbohr/repohop/internal/logging"
 	"github.com/rustbohr/repohop/internal/model"
 )
 
@@ -549,4 +550,116 @@ func TestProjectListStartsOnTheRememberedProject(t *testing.T) {
 	if got := newProjectList(sh).cursor; got != 0 {
 		t.Errorf("cursor = %d, want 0 for a stale remembered project", got)
 	}
+}
+
+func TestDeletingTheProjectUnderTheCursorLeavesItInRange(t *testing.T) {
+	// The reported crash: with the cursor on the last project, deleting it
+	// left the cursor pointing past the end of the list, and the next enter
+	// indexed out of range.
+	cfg, _ := isolatedConfig(t, testProject(t))
+	if err := config.AddProject(cfg.UserPath, config.ProjectSpec{
+		Name: "second", Repos: []config.RepoSpec{{Path: "/r/x"}},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cfg.Reload(); err != nil {
+		t.Fatal(err)
+	}
+
+	u := start(t, New(context.Background(), cfg, model.Project{}))
+	u.waitFor(t, "second")
+
+	// Move to the last project and delete it.
+	u.forget()
+	u.send(tea.KeyMsg{Type: tea.KeyDown})
+	u.press("d")
+	u.waitFor(t, "delete project second?")
+	u.forget()
+	u.press("y")
+	u.waitFor(t, "deleted second")
+
+	// Enter must open what is left, not crash.
+	u.forget()
+	u.send(tea.KeyMsg{Type: tea.KeyEnter})
+	u.waitFor(t, "dashboard")
+
+	u.quit(t)
+}
+
+// brokenScreen panics on demand, standing in for a bug in a real screen.
+type brokenScreen struct {
+	onUpdate bool
+	onView   bool
+}
+
+func (b *brokenScreen) Init() tea.Cmd { return nil }
+func (b *brokenScreen) Title() string { return "broken" }
+func (b *brokenScreen) Hints() []Hint { return []Hint{{"x", "explode"}} }
+func (b *brokenScreen) View() string {
+	if b.onView {
+		panic("view exploded")
+	}
+	return "  nothing to see"
+}
+
+func (b *brokenScreen) Update(msg tea.Msg) (screen, tea.Cmd) {
+	if key, ok := msg.(tea.KeyMsg); ok && key.String() == "x" && b.onUpdate {
+		var empty []int
+		_ = empty[1] // the same shape of bug as the one that was reported
+	}
+	return b, nil
+}
+
+func TestAPanicBecomesAMessageAndALogEntry(t *testing.T) {
+	logPath := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", logPath)
+	if _, err := logging.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer logging.Close()
+
+	app := New(context.Background(), testConfig(), testProject(t))
+	app.stack = append(app.stack, &brokenScreen{onUpdate: true})
+	u := start(t, app)
+	u.waitFor(t, "nothing to see")
+
+	u.forget()
+	u.press("x")
+	u.waitFor(t, "Something went wrong")
+	u.waitFor(t, "index out of range")
+	u.waitFor(t, "bug in repohop")
+
+	// The failing screen is left behind, and any key carries on.
+	u.forget()
+	u.press("j")
+	u.waitFor(t, "REPO")
+
+	data, err := os.ReadFile(filepath.Join(logPath, "repohop", "repohop.log"))
+	if err != nil {
+		t.Fatalf("nothing was logged: %v", err)
+	}
+	for _, want := range []string{"panic handling key x", "index out of range", "brokenScreen"} {
+		if !strings.Contains(string(data), want) {
+			t.Errorf("log is missing %q:\n%s", want, data)
+		}
+	}
+
+	u.quit(t)
+}
+
+func TestAPanicWhileDrawingIsAlsoCaught(t *testing.T) {
+	t.Setenv("XDG_STATE_HOME", t.TempDir())
+	if _, err := logging.Init(); err != nil {
+		t.Fatal(err)
+	}
+	defer logging.Close()
+
+	app := New(context.Background(), testConfig(), testProject(t))
+	app.stack = append(app.stack, &brokenScreen{onView: true})
+	u := start(t, app)
+
+	u.waitFor(t, "Something went wrong")
+	u.waitFor(t, "view exploded")
+
+	u.quit(t)
 }

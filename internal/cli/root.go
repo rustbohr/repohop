@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"runtime/debug"
+	"strings"
 
+	"github.com/rustbohr/repohop/internal/logging"
 	"github.com/spf13/cobra"
 )
 
@@ -72,15 +75,37 @@ func newRootCmd(version string) *cobra.Command {
 
 // Execute runs the root command and exits the process with the right code.
 func Execute(version string) {
+	logging.Init() //nolint:errcheck // logging must never be why repohop stops
+	defer logging.Close()
+	defer recoverPanic()
+
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
 	root := newRootCmd(version)
 	if err := root.ExecuteContext(ctx); err != nil {
+		logging.Log().Error("running "+strings.Join(os.Args[1:], " "), err)
 		fmt.Fprintln(os.Stderr, "repohop:", err)
 		os.Exit(exitCodeFor(err))
 	}
 	os.Exit(exitOK)
+}
+
+// recoverPanic turns a crash outside the interface into a short message and a
+// log entry rather than a wall of stack trace.
+func recoverPanic() {
+	r := recover()
+	if r == nil {
+		return
+	}
+	logging.Log().Panic("running "+strings.Join(os.Args[1:], " "), r, debug.Stack())
+
+	fmt.Fprintf(os.Stderr, "repohop: something went wrong: %v\n", r)
+	if path := logging.Log().Path(); path != "" {
+		fmt.Fprintf(os.Stderr, "repohop: this is a bug; the details are in %s\n", path)
+	}
+	logging.Close() //nolint:errcheck // already on the way out
+	os.Exit(exitUsage)
 }
 
 func exitCodeFor(err error) int {
