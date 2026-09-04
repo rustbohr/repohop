@@ -235,6 +235,7 @@ func projectSpec(name, base string, repos []model.Repo) config.ProjectSpec {
 func (e *editor) View() string {
 	t := e.sh.theme
 	if e.mode == modeAddRepo {
+		e.adding.SetHeight(max(e.sh.height-6, 3))
 		var b strings.Builder
 		b.WriteString("\n  Add a repository to " + t.Title.Render(e.name.Value()) + "\n")
 		if !e.adding.browsing() {

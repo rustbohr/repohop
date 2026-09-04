@@ -236,6 +236,7 @@ func (s *setup) View() string {
 	t := s.sh.theme
 	switch s.step {
 	case stepRoot:
+		s.path.SetHeight(max(s.sh.height-5, 3))
 		if s.path.browsing() {
 			return "\n" + s.path.View()
 		}

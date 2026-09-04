@@ -162,90 +162,195 @@ func TestPathInputHasNoCandidatesForAMissingDirectory(t *testing.T) {
 	}
 }
 
-func TestDirBrowserNavigatesAndMarksRepos(t *testing.T) {
+func TestDirTreeShowsTheHierarchy(t *testing.T) {
 	root := completionTree(t)
-	b := newDirBrowser(NewTheme(), root)
+	tree := newDirTree(NewTheme(), root)
 
-	if b.dir != root {
-		t.Fatalf("browser opened on %q, want %q", b.dir, root)
-	}
-	view := b.view()
-	if !strings.Contains(view, "workspace") {
-		t.Errorf("browser does not list the subdirectories:\n%s", view)
+	// The root opens expanded, so its subdirectories are visible immediately.
+	if got := treeNames(tree); len(got) != 5 {
+		t.Fatalf("visible rows = %v, want the root and its four subdirectories", got)
 	}
 
-	// Move onto workspace and look inside: its one child is a git repository.
-	b.selectName("workspace")
-	if _, done := b.update(tea.KeyMsg{Type: tea.KeyRight}); done {
-		t.Fatal("looking inside a directory finished the browser")
+	// Opening workspace keeps everything else on screen: the tree grows, it
+	// does not replace the view.
+	tree.selectName("workspace")
+	if chosen, done := tree.update(keyOf("right")); done {
+		t.Fatalf("right chose %q instead of opening the directory", chosen)
 	}
-	if filepath.Base(b.dir) != "workspace" {
-		t.Fatalf("browser is in %q, want workspace", b.dir)
-	}
-	if got := b.entries; len(got) != 1 || got[0].name != "api" || !got[0].isRepo {
-		t.Errorf("entries = %+v, want api marked as a repository", got)
-	}
-
-	// Left goes back up, keeping the cursor on where we came from.
-	if _, done := b.update(tea.KeyMsg{Type: tea.KeyLeft}); done {
-		t.Fatal("going up finished the browser")
-	}
-	if b.dir != root {
-		t.Fatalf("browser is in %q, want back at the root", b.dir)
-	}
-	if entry, _ := b.current(); entry.name != "workspace" {
-		t.Errorf("cursor is on %q, want the directory we came from", entry.name)
-	}
-
-	// Enter descends rather than choosing, so nothing is picked by accident on
-	// the way to what you wanted.
-	if chosen, done := b.update(tea.KeyMsg{Type: tea.KeyEnter}); done {
-		t.Errorf("enter chose %q instead of opening the directory", chosen)
-	}
-	if filepath.Base(b.dir) != "workspace" {
-		t.Fatalf("enter left the browser in %q, want inside workspace", b.dir)
-	}
-
-	// s chooses the directory being looked at.
-	chosen, done := b.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
-	if !done || chosen != filepath.Join(root, "workspace") {
-		t.Errorf("s gave %q, %v, want the workspace path", chosen, done)
-	}
-}
-
-func TestDirBrowserChoosesTheCurrentDirectory(t *testing.T) {
-	root := completionTree(t)
-
-	for _, key := range []string{"s", "."} {
-		b := newDirBrowser(NewTheme(), root)
-		chosen, done := b.update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)})
-		if !done || chosen != root {
-			t.Errorf("%q gave %q, %v, want the current directory", key, chosen, done)
+	got := treeNames(tree)
+	for _, want := range []string{"workspace", "api", "scratch", "sources", "other"} {
+		if !contains(got, want) {
+			t.Errorf("%q is not visible after expanding: %v", want, got)
 		}
 	}
+	if indexOf(got, "api") != indexOf(got, "workspace")+1 {
+		t.Errorf("api is not shown under its parent: %v", got)
+	}
+
+	// The child is indented and marked as a repository.
+	view := tree.view()
+	if !strings.Contains(view, "    ▸ api") && !strings.Contains(view, "    · api") {
+		t.Errorf("child is not indented under its parent:\n%s", view)
+	}
+
+	// Left closes it again.
+	tree.selectName("workspace")
+	tree.update(keyOf("left"))
+	if contains(treeNames(tree), "api") {
+		t.Errorf("left did not collapse the directory: %v", treeNames(tree))
+	}
 }
 
-func TestPathInputBrowserRoundTrip(t *testing.T) {
+func TestDirTreeChoosesTheHighlightedDirectory(t *testing.T) {
+	root := completionTree(t)
+	tree := newDirTree(NewTheme(), root)
+	tree.selectName("sources")
+
+	chosen, done := tree.update(keyOf("enter"))
+	if !done || chosen != filepath.Join(root, "sources") {
+		t.Errorf("enter gave %q, %v, want the sources path", chosen, done)
+	}
+}
+
+func TestDirTreeGoesUpALevel(t *testing.T) {
+	root := completionTree(t)
+	tree := newDirTree(NewTheme(), filepath.Join(root, "workspace"))
+
+	if _, done := tree.update(keyOf("-")); done {
+		t.Fatal("going up finished the tree")
+	}
+	if tree.root.path != root {
+		t.Fatalf("root is %q, want the parent %q", tree.root.path, root)
+	}
+
+	// The branch we came from is still open, with the cursor on it, so going
+	// up never loses your place.
+	names := treeNames(tree)
+	if !contains(names, "api") {
+		t.Errorf("the branch we came from was collapsed: %v", names)
+	}
+	if node := tree.current(); node == nil || node.name != "workspace" {
+		t.Errorf("cursor is on %v, want workspace", node)
+	}
+}
+
+func TestDirTreeLeftFromAClosedNodeGoesToTheParent(t *testing.T) {
+	root := completionTree(t)
+	tree := newDirTree(NewTheme(), root)
+	tree.selectName("workspace")
+	tree.update(keyOf("right"))
+	tree.selectName("api")
+
+	tree.update(keyOf("left"))
+	if node := tree.current(); node == nil || node.name != "workspace" {
+		t.Errorf("cursor is on %v, want its parent workspace", node)
+	}
+}
+
+func TestDirTreeSkipsFilesAndHiddenDirectories(t *testing.T) {
+	root := completionTree(t)
+	tree := newDirTree(NewTheme(), root)
+
+	names := treeNames(tree)
+	if contains(names, "notes.txt") || contains(names, ".hidden") {
+		t.Errorf("tree shows files or dot-directories: %v", names)
+	}
+}
+
+func TestPathInputTreeRoundTrip(t *testing.T) {
 	root := completionTree(t)
 	p := newPathInput(NewTheme(), "~")
 	p.SetValue(root)
 
 	p.Update(tea.KeyMsg{Type: tea.KeyCtrlO})
 	if !p.browsing() {
-		t.Fatal("ctrl+o did not open the browser")
+		t.Fatal("ctrl+o did not open the tree")
 	}
 	if !strings.Contains(p.View(), "workspace") {
-		t.Errorf("browsing view is not the browser:\n%s", p.View())
+		t.Errorf("the tree is not showing:\n%s", p.View())
 	}
 
-	// Open sources, then choose it: the field takes the browsed path.
 	p.browser.selectName("sources")
 	p.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	p.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("s")})
 	if p.browsing() {
-		t.Fatal("choosing a directory left the browser open")
+		t.Fatal("choosing a directory left the tree open")
 	}
 	if got := filepath.Base(p.Value()); got != "sources" {
 		t.Errorf("value = %q, want the chosen directory", p.Value())
+	}
+}
+
+// selectName puts the cursor on the first visible node with this name.
+func (t *dirTree) selectName(name string) {
+	for i, node := range t.nodes {
+		if node.name == name || filepath.Base(node.path) == name {
+			t.cursor = i
+			return
+		}
+	}
+}
+
+func treeNames(t *dirTree) []string {
+	names := make([]string, 0, len(t.nodes))
+	for _, node := range t.nodes {
+		names = append(names, filepath.Base(node.path))
+	}
+	return names
+}
+
+func keyOf(key string) tea.KeyMsg {
+	switch key {
+	case "right":
+		return tea.KeyMsg{Type: tea.KeyRight}
+	case "left":
+		return tea.KeyMsg{Type: tea.KeyLeft}
+	case "enter":
+		return tea.KeyMsg{Type: tea.KeyEnter}
+	default:
+		return tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(key)}
+	}
+}
+
+func contains(values []string, want string) bool {
+	return indexOf(values, want) >= 0
+}
+
+func indexOf(values []string, want string) int {
+	for i, value := range values {
+		if value == want {
+			return i
+		}
+	}
+	return -1
+}
+
+func TestDirTreeIndentationSurvivesGoingUp(t *testing.T) {
+	root := completionTree(t)
+	tree := newDirTree(NewTheme(), filepath.Join(root, "workspace"))
+
+	// api is a child of workspace; after re-rooting one level up it must
+	// still be drawn one level deeper than its parent.
+	tree.selectName("workspace")
+	tree.update(keyOf("right"))
+	tree.update(keyOf("-"))
+
+	var parent, child *treeNode
+	for _, node := range tree.nodes {
+		switch filepath.Base(node.path) {
+		case "workspace":
+			parent = node
+		case "api":
+			child = node
+		}
+	}
+	if parent == nil || child == nil {
+		t.Fatalf("expected both workspace and api to be visible: %v", treeNames(tree))
+	}
+	if child.depth != parent.depth+1 {
+		t.Errorf("child depth = %d, parent depth = %d: the indentation no longer shows the hierarchy",
+			child.depth, parent.depth)
+	}
+	if child.parent != parent {
+		t.Error("the re-attached branch still points at its old parent")
 	}
 }

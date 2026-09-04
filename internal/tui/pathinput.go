@@ -22,12 +22,15 @@ const maxCompletions = 8
 type pathInput struct {
 	input   textinput.Model
 	theme   Theme
-	browser *dirBrowser
+	browser *dirTree
 
 	// matches are the directories the current fragment could become.
 	matches []string
 	// suggestion is what tab would append to the value.
 	suggestion string
+
+	// height is how many rows the directory tree may use.
+	height int
 
 	// While cycling, repeated tabs step through a frozen candidate list rather
 	// than completing again, the way a shell does.
@@ -79,7 +82,15 @@ func (p *pathInput) SetValue(value string) {
 	p.refresh()
 }
 
-// browsing reports whether the directory browser is open.
+// SetHeight tells the field how much room the directory tree has.
+func (p *pathInput) SetHeight(height int) {
+	p.height = height
+	if p.browser != nil {
+		p.browser.SetHeight(height)
+	}
+}
+
+// browsing reports whether the directory tree is open.
 func (p *pathInput) browsing() bool { return p.browser != nil }
 
 // Update handles one key. It returns true when the key was consumed, so the
@@ -101,7 +112,10 @@ func (p *pathInput) Update(msg tea.KeyMsg) (tea.Cmd, bool) {
 		p.complete()
 		return nil, true
 	case "ctrl+o":
-		p.browser = newDirBrowser(p.theme, p.Path())
+		p.browser = newDirTree(p.theme, p.Path())
+		if p.height > 0 {
+			p.browser.SetHeight(p.height)
+		}
 		return nil, true
 	case "enter":
 		return nil, false // the screen decides what submitting means
