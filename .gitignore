@@ -1,1 +1,15 @@
-.idea
+# Build output
+/dist/
+/repohop
+/repohop.exe
+
+# Scratch notes, never committed
+*.local.md
+
+# Editors
+.idea/
+.vscode/
+*.swp
+
+# OS
+.DS_Store
