@@ -121,6 +121,20 @@ type Config struct {
 	DirPath string
 	// Loaded lists the files that actually contributed, in precedence order.
 	Loaded []string
+
+	// opts is how this config was discovered, so it can be re-read the same
+	// way after something writes to it.
+	opts Options
+}
+
+// Reload re-reads the configuration exactly the way it was loaded, in place.
+func (c *Config) Reload() error {
+	fresh, err := Load(c.opts)
+	if err != nil {
+		return err
+	}
+	*c = *fresh
+	return nil
 }
 
 // Project looks a project up by name.
@@ -158,7 +172,7 @@ func Load(opts Options) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
-	cfg := &Config{Settings: DefaultSettings(), UserPath: userPath}
+	cfg := &Config{Settings: DefaultSettings(), UserPath: userPath, opts: opts}
 
 	if opts.Path != "" {
 		file, err := readFile(opts.Path)
@@ -281,7 +295,11 @@ func Save(path string, file *File) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
-	data, err := yaml.Marshal(file)
+	var node yaml.Node
+	if err := node.Encode(file); err != nil {
+		return err
+	}
+	data, err := encodeNode(&node)
 	if err != nil {
 		return err
 	}
@@ -356,8 +374,8 @@ func (c *Config) Resolve(name string) (model.Project, error) {
 	return model.Project{}, ErrAmbiguousProject
 }
 
-// ReadFile reads one config file. A missing file yields an empty File, so the
-// setup flow can write the first project without special-casing.
+// ReadFile reads one config file. A missing file yields an empty File, so
+// callers that only want to inspect a config need not special-case first run.
 func ReadFile(path string) (*File, error) {
 	file, err := readFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -370,22 +388,30 @@ func ReadFile(path string) (*File, error) {
 }
 
 // AddProject writes a project into a config file, replacing any project of the
-// same name.
+// same name. The rest of the file — comments, key order, keys this version of
+// repohop does not know about — is left exactly as it was.
 func AddProject(path string, spec ProjectSpec) error {
-	file, err := ReadFile(path)
+	return editFile(path, func(doc *document) error { return doc.setProject(spec) })
+}
+
+// RenameProject changes a project's name, keeping its place in the file.
+func RenameProject(path, from, to string) error {
+	return editFile(path, func(doc *document) error { return doc.renameProject(from, to) })
+}
+
+// RemoveProject deletes a project from a config file.
+func RemoveProject(path, name string) error {
+	return editFile(path, func(doc *document) error { return doc.removeProject(name) })
+}
+
+// editFile applies one change to a config file and writes it back.
+func editFile(path string, change func(*document) error) error {
+	doc, err := openDocument(path)
 	if err != nil {
 		return err
 	}
-	replaced := false
-	for i, existing := range file.Projects {
-		if existing.Name == spec.Name {
-			file.Projects[i] = spec
-			replaced = true
-			break
-		}
+	if err := change(doc); err != nil {
+		return err
 	}
-	if !replaced {
-		file.Projects = append(file.Projects, spec)
-	}
-	return Save(path, file)
+	return doc.save()
 }

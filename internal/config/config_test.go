@@ -403,3 +403,193 @@ func TestAddProject(t *testing.T) {
 		t.Errorf("acme has %d repos, want the rewritten 2", len(acme.Repos))
 	}
 }
+
+func TestEditsPreserveTheRestOfTheFile(t *testing.T) {
+	isolate(t)
+	path := write(t, filepath.Join(t.TempDir(), "config.yaml"), `# repohop config
+version: 1
+
+defaults:
+  # only fetch on demand
+  fetch: false
+  future_option: whatever   # a key this repohop does not know
+
+projects:
+  # the main one
+  - name: acme
+    base: ~/src/acme
+    repos: [api, web]
+
+  - name: side
+    repos: [/dev/thing]
+`)
+
+	if err := AddProject(path, ProjectSpec{Name: "third", Repos: []RepoSpec{{Path: "/dev/third"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := string(data)
+	for _, want := range []string{
+		"# repohop config",
+		"# only fetch on demand",
+		"# the main one",
+		"future_option: whatever",
+		"a key this repohop does not know",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("edit lost %q from the file:\n%s", want, got)
+		}
+	}
+
+	cfg, err := Load(Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if names := strings.Join(cfg.Names(), ","); names != "acme,side,third" {
+		t.Errorf("projects = %q, want acme,side,third in file order", names)
+	}
+	if cfg.Settings.Fetch {
+		t.Error("Fetch = true; the edit dropped the file's own default")
+	}
+}
+
+func TestAddProjectReplacesInPlace(t *testing.T) {
+	isolate(t)
+	path := write(t, filepath.Join(t.TempDir(), "config.yaml"), `
+projects:
+  # keep this comment on acme
+  - name: acme
+    repos: [/a]
+  - name: zed
+    repos: [/z]
+`)
+
+	if err := AddProject(path, ProjectSpec{Name: "acme", Repos: []RepoSpec{{Path: "/a"}, {Path: "/b"}}}); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg, err := Load(Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if names := strings.Join(cfg.Names(), ","); names != "acme,zed" {
+		t.Errorf("projects = %q, want acme first: a replacement keeps its place", names)
+	}
+	if len(cfg.Projects[0].Repos) != 2 {
+		t.Errorf("acme has %d repos, want the rewritten 2", len(cfg.Projects[0].Repos))
+	}
+
+	data, _ := os.ReadFile(path)
+	if !strings.Contains(string(data), "keep this comment on acme") {
+		t.Errorf("the replaced project lost its comment:\n%s", data)
+	}
+}
+
+func TestRemoveProject(t *testing.T) {
+	isolate(t)
+	path := write(t, filepath.Join(t.TempDir(), "config.yaml"), `
+projects:
+  - name: acme
+    repos: [/a]
+  - name: side
+    repos: [/b]
+`)
+
+	if err := RemoveProject(path, "acme"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if names := strings.Join(cfg.Names(), ","); names != "side" {
+		t.Errorf("projects = %q, want only side", names)
+	}
+
+	if err := RemoveProject(path, "gone"); !errors.Is(err, ErrProjectNotFound) {
+		t.Errorf("RemoveProject(gone) = %v, want ErrProjectNotFound", err)
+	}
+}
+
+func TestRenameProject(t *testing.T) {
+	isolate(t)
+	path := write(t, filepath.Join(t.TempDir(), "config.yaml"), `
+projects:
+  - name: acme
+    base: ~/src/acme
+    repos: [api]
+  - name: side
+    repos: [/b]
+`)
+
+	if err := RenameProject(path, "acme", "acme-corp"); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if names := strings.Join(cfg.Names(), ","); names != "acme-corp,side" {
+		t.Errorf("projects = %q, want acme-corp first", names)
+	}
+	if got := cfg.Projects[0].Base; got != "~/src/acme" {
+		t.Errorf("base = %q, want the rename to leave it alone", got)
+	}
+
+	if err := RenameProject(path, "acme-corp", "side"); err == nil {
+		t.Error("renaming onto an existing name succeeded, want an error")
+	}
+	if err := RenameProject(path, "missing", "x"); !errors.Is(err, ErrProjectNotFound) {
+		t.Errorf("RenameProject(missing) = %v, want ErrProjectNotFound", err)
+	}
+}
+
+func TestEditCreatesAFileThatDoesNotExistYet(t *testing.T) {
+	isolate(t)
+	path := filepath.Join(t.TempDir(), "nested", "config.yaml")
+
+	if err := AddProject(path, ProjectSpec{Name: "first", Base: "~/src", Repos: []RepoSpec{{Path: "api"}}}); err != nil {
+		t.Fatal(err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "version: 1") {
+		t.Errorf("new file has no version key:\n%s", data)
+	}
+	if !strings.Contains(string(data), "- api") {
+		t.Errorf("simple repo entry was not written in the scalar form:\n%s", data)
+	}
+
+	cfg, err := Load(Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Projects) != 1 || cfg.Projects[0].Name != "first" {
+		t.Fatalf("reloaded config = %+v", cfg.Projects)
+	}
+}
+
+func TestEditFileWithoutAProjectsKey(t *testing.T) {
+	isolate(t)
+	path := write(t, filepath.Join(t.TempDir(), "config.yaml"), "version: 1\ndefaults:\n  pull: false\n")
+
+	if err := AddProject(path, ProjectSpec{Name: "only", Repos: []RepoSpec{{Path: "/a"}}}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := Load(Options{Path: path})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cfg.Projects) != 1 {
+		t.Fatalf("projects = %v, want the one just added", cfg.Names())
+	}
+	if cfg.Settings.Pull {
+		t.Error("Pull = true; the edit dropped the file's defaults")
+	}
+}
