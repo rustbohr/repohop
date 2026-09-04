@@ -14,8 +14,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/exp/teatest"
 	"github.com/rustbohr/repohop/internal/config"
+	"github.com/rustbohr/repohop/internal/git"
 	"github.com/rustbohr/repohop/internal/logging"
 	"github.com/rustbohr/repohop/internal/model"
+	"github.com/rustbohr/repohop/internal/ops"
 )
 
 // The screen-stack tests drive the real program against real repositories.
@@ -815,5 +817,116 @@ func TestPickerKeepsTheCursorWhenTheListReloads(t *testing.T) {
 
 	if got := p.matches[p.cursor].info.Name; got != was {
 		t.Errorf("cursor moved from %q to %q when the list reloaded", was, got)
+	}
+}
+
+// summaryRows builds a finished switch summary from real-looking data.
+func summaryRows(t *testing.T, width int, transitions [][2]string) *run {
+	t.Helper()
+	sh := &shared{cfg: testConfig(), theme: NewTheme(), ctx: context.Background(), width: width, height: 24}
+
+	var repos []model.Repo
+	for i := range transitions {
+		repos = append(repos, model.Repo{Name: transitions[i][0], Path: "/r/" + transitions[i][0]})
+	}
+	r := newRun(sh, switchJob(repos, model.BranchInfo{Name: "master"}, true))
+	for i, transition := range transitions {
+		r.rows[i].done = true
+		r.rows[i].sw = ops.SwitchResult{
+			Repo:      repos[i],
+			OldBranch: transition[1],
+			NewBranch: "master",
+			Outcome:   ops.OutcomeSwitched,
+		}
+	}
+	r.phase = phaseDone
+	return r
+}
+
+func TestSummaryColumnsStayAlignedWithLongBranchNames(t *testing.T) {
+	// The reported case: a branch name longer than the column it was given
+	// widened that row and pushed the arrow out of line.
+	long := "feat/adaptive-page-settle"
+	r := summaryRows(t, 120, [][2]string{
+		{"worker", long},
+		{"worker-full-browser", "master"},
+		{"engine", "master"},
+		{"database", long},
+		{"delivery", "master"},
+	})
+
+	assertColumnsAligned(t, r.View())
+
+	// At this width nothing needs cutting, so the long branch is shown whole.
+	if !strings.Contains(stripANSI(r.View()), long) {
+		t.Errorf("the branch name was cut although there was room:\n%s", r.View())
+	}
+}
+
+func TestSummaryColumnsStayAlignedWhenTheTerminalIsNarrow(t *testing.T) {
+	r := summaryRows(t, 60, [][2]string{
+		{"worker", "feat/adaptive-page-settle"},
+		{"a-very-long-repository-name-indeed", "master"},
+		{"api", "master"},
+	})
+	assertColumnsAligned(t, r.View())
+}
+
+func TestDashboardColumnsStayAlignedWithLongNames(t *testing.T) {
+	sh := &shared{cfg: testConfig(), theme: NewTheme(), ctx: context.Background(), width: 100, height: 24}
+	sh.project = model.Project{Name: "acme", Repos: []model.Repo{
+		{Name: "worker-full-browser", Path: "/r/a"},
+		{Name: "x", Path: "/r/b"},
+	}}
+	d := newDashboard(sh)
+	for i := range d.rows {
+		d.rows[i].loaded = true
+		d.rows[i].state.Status = git.Status{Branch: "feat/long-branch-name-that-will-not-fit-here", Upstream: "origin/x"}
+	}
+	d.loading = 0
+
+	view := stripANSI(d.View())
+	var widths []int
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "clean") {
+			// Count display cells, not bytes: the cursor and the ellipsis are
+			// multi-byte, so byte offsets would compare nothing useful.
+			widths = append(widths, runeIndex(line, "clean"))
+		}
+	}
+	if len(widths) != 2 {
+		t.Fatalf("expected two data rows, got %d:\n%s", len(widths), view)
+	}
+	if widths[0] != widths[1] {
+		t.Errorf("STATE column starts at %d and %d:\n%s", widths[0], widths[1], view)
+	}
+}
+
+// runeIndex is strings.Index measured in runes.
+func runeIndex(line, substring string) int {
+	i := strings.Index(line, substring)
+	if i < 0 {
+		return -1
+	}
+	return len([]rune(line[:i]))
+}
+
+// assertColumnsAligned checks that every arrow in a summary is in the same
+// column, which is the thing that goes wrong when a value outgrows its cell.
+func assertColumnsAligned(t *testing.T, view string) {
+	t.Helper()
+	var positions []int
+	for _, line := range strings.Split(stripANSI(view), "\n") {
+		if i := strings.Index(line, "→"); i >= 0 {
+			positions = append(positions, len([]rune(line[:i])))
+		}
+	}
+	if len(positions) < 2 {
+		t.Fatalf("expected several rows with an arrow:\n%s", view)
+	}
+	for _, position := range positions[1:] {
+		if position != positions[0] {
+			t.Fatalf("arrows are at columns %v, want them all in one place:\n%s", positions, view)
+		}
 	}
 }

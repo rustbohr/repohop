@@ -190,8 +190,8 @@ func (s *projectList) View() string {
 		if !s.editable(project) {
 			marker = t.Warning.Render("read-only here") + "  "
 		}
-		line := style.Render(pad(project.Name, nameWidth)) + "  " +
-			t.Muted.Render(pad(plural(len(project.Repos), "repo"), 10)) + "  " +
+		line := style.Render(cell(project.Name, nameWidth)) + "  " +
+			t.Muted.Render(cell(plural(len(project.Repos), "repo"), 10)) + "  " +
 			marker + t.Muted.Render(shortenHome(project.Source))
 		b.WriteString(cursor + truncate(line, max(s.sh.width-2, 1)) + "\n")
 	}

@@ -363,7 +363,7 @@ func (p *picker) renderList(width int) string {
 		}
 		count := t.Muted.Render(itoa(match.info.Count()) + "/" + itoa(len(p.repos)))
 		name := highlight(truncate(match.info.Name, nameWidth), match.positions, t)
-		b.WriteString(cursor + pad(name, nameWidth) + "  " + count + "\n")
+		b.WriteString(cursor + cell(name, nameWidth) + "  " + count + "\n")
 	}
 	return b.String()
 }
@@ -401,7 +401,7 @@ func (p *picker) renderPreview(width int) string {
 	for _, presence := range info.In {
 		names = append(names, presence.Repo.Name)
 	}
-	nameWidth := columnWidth(names, 6, 24)
+	nameWidth := columnWidth(names, 6, max(width/3, 8))
 
 	var b strings.Builder
 	b.WriteString(t.Title.Render(truncate(info.Name, max(width, 1))) + "\n")
@@ -411,11 +411,11 @@ func (p *picker) renderPreview(width int) string {
 		if presence.Any() {
 			mark = t.Success.Render("✓")
 		}
-		line := mark + " " + pad(presence.Repo.Name, nameWidth) + "  " + t.Muted.Render(presence.Where())
+		line := mark + " " + cell(presence.Repo.Name, nameWidth) + "  " + t.Muted.Render(presence.Where())
 		b.WriteString(truncate(line, max(width, 1)) + "\n")
 	}
 	for _, failure := range p.failures {
-		b.WriteString(t.Failure.Render("! "+pad(failure.Repo.Name, nameWidth)+"  "+errLabel(failure.Err)) + "\n")
+		b.WriteString(t.Failure.Render("! "+cell(failure.Repo.Name, nameWidth)+"  "+errLabel(failure.Err)) + "\n")
 	}
 	return b.String()
 }

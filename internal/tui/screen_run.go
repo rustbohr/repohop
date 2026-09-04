@@ -357,16 +357,16 @@ func (r *run) viewProgress() string {
 	for _, row := range r.rows {
 		names = append(names, row.repo.Name)
 	}
-	nameWidth := columnWidth(names, 6, 28)
+	nameWidth := columnWidth(names, 6, share(r.sh.width, 1, 3, 12))
 
 	for _, row := range r.rows {
 		switch {
 		case !row.done:
-			b.WriteString("  " + t.Muted.Render(pad(row.repo.Name, nameWidth)+"  waiting") + "\n")
+			b.WriteString("  " + t.Muted.Render(cell(row.repo.Name, nameWidth)+"  waiting") + "\n")
 		case row.failed:
-			b.WriteString("  " + pad(row.repo.Name, nameWidth) + "  " + t.Failure.Render(r.rowNote(row)) + "\n")
+			b.WriteString("  " + cell(row.repo.Name, nameWidth) + "  " + t.Failure.Render(r.rowNote(row)) + "\n")
 		default:
-			b.WriteString("  " + pad(row.repo.Name, nameWidth) + "  " + t.Success.Render(r.rowNote(row)) + "\n")
+			b.WriteString("  " + cell(row.repo.Name, nameWidth) + "  " + t.Success.Render(r.rowNote(row)) + "\n")
 		}
 	}
 	b.WriteString("\n  " + r.spin.View() + " " + t.Muted.Render(itoa(r.current)+"/"+itoa(len(r.rows))+" done"))
@@ -387,18 +387,20 @@ func (r *run) viewSummary() string {
 		names = append(names, row.repo.Name)
 		olds = append(olds, row.sw.OldBranch)
 	}
-	nameWidth := columnWidth(names, 6, 28)
-	oldWidth := columnWidth(olds, 8, 30)
+	// Bound the columns against the terminal, not against a constant: a real
+	// branch name is routinely longer than any number picked in advance.
+	nameWidth := columnWidth(names, 6, share(r.sh.width, 1, 4, 12))
+	oldWidth := columnWidth(olds, 8, share(r.sh.width, 1, 3, 16))
 
 	var b strings.Builder
-	b.WriteString("  " + t.ColumnHead.Render(pad("REPO", nameWidth)+"  "+pad("OLD BRANCH", oldWidth+3)+"NEW BRANCH") + "\n")
+	b.WriteString("  " + t.ColumnHead.Render(cell("REPO", nameWidth)+"  "+cell("OLD BRANCH", oldWidth+3)+"NEW BRANCH") + "\n")
 	for i, row := range r.rows {
 		cursor := "  "
 		if i == r.cursor {
 			cursor = t.Cursor.Render("› ")
 		}
-		line := cursor + pad(row.repo.Name, nameWidth) + "  " +
-			pad(row.sw.OldBranch, oldWidth) + t.Muted.Render(" → ") + row.sw.NewBranch
+		line := cursor + cell(row.repo.Name, nameWidth) + "  " +
+			cell(row.sw.OldBranch, oldWidth) + t.Muted.Render(" → ") + row.sw.NewBranch
 		if note := r.rowNote(row); note != "" {
 			style := t.Muted
 			if row.failed {
@@ -434,7 +436,7 @@ func (r *run) viewOpSummary() string {
 	for _, row := range r.rows {
 		names = append(names, row.repo.Name)
 	}
-	nameWidth := columnWidth(names, 6, 28)
+	nameWidth := columnWidth(names, 6, share(r.sh.width, 1, 3, 12))
 
 	var b strings.Builder
 	b.WriteString("\n")
@@ -447,7 +449,7 @@ func (r *run) viewOpSummary() string {
 		if row.failed {
 			style = t.Failure
 		}
-		b.WriteString(cursor + pad(row.repo.Name, nameWidth) + "  " + style.Render(r.rowNote(row)) + "\n")
+		b.WriteString(cursor + cell(row.repo.Name, nameWidth) + "  " + style.Render(r.rowNote(row)) + "\n")
 		b.WriteString(r.detail(i, row))
 	}
 	return b.String()

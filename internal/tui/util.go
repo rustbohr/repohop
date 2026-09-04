@@ -7,6 +7,15 @@ import (
 	"github.com/charmbracelet/lipgloss"
 )
 
+// cell renders a value as exactly width display cells: cut when it is too
+// long, padded when it is too short. Columns are built from this rather than
+// from pad alone, because a value wider than its column would otherwise push
+// everything after it out of line — which is what happens the first time a
+// real branch name turns up longer than the column it was given.
+func cell(value string, width int) string {
+	return pad(truncate(value, width), width)
+}
+
 // pad right-pads a string to width display cells.
 func pad(s string, width int) string {
 	if gap := width - lipgloss.Width(s); gap > 0 {
@@ -77,8 +86,9 @@ func pluralise(unit string) string {
 	}
 }
 
-// column widths for a set of values, capped so one long branch name cannot
-// push everything else off the screen.
+// columnWidth sizes a column to its widest value, within the bounds given.
+// Values wider than the maximum are cut by cell, not allowed to widen the
+// column.
 func columnWidth(values []string, minWidth, maxWidth int) int {
 	width := minWidth
 	for _, value := range values {
@@ -89,7 +99,19 @@ func columnWidth(values []string, minWidth, maxWidth int) int {
 	if width > maxWidth {
 		width = maxWidth
 	}
+	if width < 1 {
+		width = 1
+	}
 	return width
+}
+
+// share is a fraction of the terminal width, used to bound a column against
+// the space actually available rather than an arbitrary constant.
+func share(width, numerator, denominator, minimum int) int {
+	if denominator <= 0 {
+		return minimum
+	}
+	return max(width*numerator/denominator, minimum)
 }
 
 // itoa is strconv.Itoa under a shorter name; the render paths use it a lot.

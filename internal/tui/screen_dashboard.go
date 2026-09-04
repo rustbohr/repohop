@@ -234,13 +234,15 @@ func (d *dashboard) View() string {
 		names = append(names, row.state.Repo.Name)
 		branches = append(branches, d.branchCell(row))
 	}
-	nameWidth := columnWidth(names, 6, 28)
-	branchWidth := columnWidth(branches, 8, 34)
+	// The fixed columns take 22 cells; share what is left between the two that
+	// hold real names, so a long branch is cut instead of shifting the row.
+	nameWidth := columnWidth(names, 6, share(d.sh.width, 1, 4, 10))
+	branchWidth := columnWidth(branches, 8, share(d.sh.width, 2, 5, 12))
 
 	var b strings.Builder
 	b.WriteString("  " + t.ColumnHead.Render(
-		pad("REPO", nameWidth+2)+"  "+pad("BRANCH", branchWidth)+"  "+
-			pad("STATE", 7)+"  "+pad("SYNC", 9)+"  LAST COMMIT") + "\n")
+		cell("REPO", nameWidth+2)+"  "+cell("BRANCH", branchWidth)+"  "+
+			cell("STATE", 7)+"  "+cell("SYNC", 9)+"  LAST COMMIT") + "\n")
 
 	d.scroll()
 	for i := d.offset; i < len(d.rows) && i < d.offset+d.visibleRows(); i++ {
@@ -268,7 +270,7 @@ func (d *dashboard) renderRow(i, nameWidth, branchWidth int) string {
 		marker = t.Cursor.Render("✓")
 	}
 
-	name := pad(row.state.Repo.Name, nameWidth)
+	name := cell(row.state.Repo.Name, nameWidth)
 	if row.selected {
 		name = t.SelectedRow.Render(name)
 	}
@@ -281,15 +283,15 @@ func (d *dashboard) renderRow(i, nameWidth, branchWidth int) string {
 	}
 
 	st := row.state.Status
-	state := t.Clean.Render(pad("clean", 7))
+	state := t.Clean.Render(cell("clean", 7))
 	if st.Dirty {
-		state = t.Dirty.Render(pad("dirty", 7))
+		state = t.Dirty.Render(cell("dirty", 7))
 	}
 
 	line := cursor + marker + " " + name + "  " +
-		pad(d.branchCell(row), branchWidth) + "  " +
+		cell(d.branchCell(row), branchWidth) + "  " +
 		state + "  " +
-		pad(syncCell(st), 9) + "  " +
+		cell(syncCell(st), 9) + "  " +
 		t.Muted.Render(lastCommitCell(st))
 	return truncate(line, max(d.sh.width, 1))
 }

@@ -371,11 +371,11 @@ func (a *App) helpOverlay() string {
 	var b strings.Builder
 	b.WriteString(t.Title.Render(a.top().Title()+" keys") + "\n\n")
 	for _, hint := range a.top().Hints() {
-		fmt.Fprintf(&b, "  %s  %s\n", t.Key.Render(pad(hint.Key, 8)), hint.Desc)
+		fmt.Fprintf(&b, "  %s  %s\n", t.Key.Render(cell(hint.Key, 8)), hint.Desc)
 	}
 	b.WriteString("\n" + t.Title.Render("everywhere") + "\n\n")
 	for _, hint := range globalHints() {
-		fmt.Fprintf(&b, "  %s  %s\n", t.Key.Render(pad(hint.Key, 8)), hint.Desc)
+		fmt.Fprintf(&b, "  %s  %s\n", t.Key.Render(cell(hint.Key, 8)), hint.Desc)
 	}
 	b.WriteString("\n" + t.Muted.Render("any key closes this overlay"))
 	return lipgloss.NewStyle().MaxHeight(a.sh.height).Render(t.Overlay.Render(b.String()))

@@ -257,7 +257,7 @@ func (e *editor) View() string {
 	for _, repo := range e.repos {
 		names = append(names, repo.Name)
 	}
-	nameWidth := columnWidth(names, 6, 28)
+	nameWidth := columnWidth(names, 6, share(e.sh.width, 1, 3, 12))
 
 	visible := max(e.sh.height-8, 3)
 	start := max(min(e.cursor-visible+1, len(e.repos)-visible), 0)
@@ -266,7 +266,7 @@ func (e *editor) View() string {
 		if i == e.cursor && e.mode == modeList {
 			cursor = t.Cursor.Render("› ")
 		}
-		line := cursor + pad(e.repos[i].Name, nameWidth) + "  " + t.Muted.Render(shortenHome(e.repos[i].Path))
+		line := cursor + cell(e.repos[i].Name, nameWidth) + "  " + t.Muted.Render(shortenHome(e.repos[i].Path))
 		b.WriteString("  " + truncate(line, max(e.sh.width-2, 1)) + "\n")
 	}
 
