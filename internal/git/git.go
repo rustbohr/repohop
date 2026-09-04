@@ -100,6 +100,11 @@ func (r *Runner) runNet(ctx context.Context, dir string, args ...string) (string
 }
 
 func (r *Runner) runTimeout(ctx context.Context, timeout time.Duration, dir string, args ...string) (string, error) {
+	if ctx == nil {
+		// A missing context is a caller's bug, but taking the process down
+		// over it is worse than running the command unparented.
+		ctx = context.Background()
+	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 

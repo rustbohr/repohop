@@ -22,6 +22,10 @@ func isTerminal() bool {
 func runDefault(cmd *cobra.Command, args []string) error {
 	if !isTerminal() {
 		status := newStatusCmd()
+		// This command is built here rather than executed by Cobra, so it
+		// inherits nothing: without the context every git call below would be
+		// handed a nil parent.
+		status.SetContext(cmd.Context())
 		status.SetArgs(args)
 		status.SetOut(cmd.OutOrStdout())
 		status.SetErr(cmd.ErrOrStderr())

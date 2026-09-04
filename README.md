@@ -207,6 +207,40 @@ When repohop writes to a config file it edits the YAML in place: comments, key
 order and any keys it does not recognise survive, and only the project being
 changed is rewritten. Blank lines between top-level keys are not preserved.
 
+## Where repohop keeps things
+
+```sh
+repohop config path     # prints all three, and whether they exist yet
+```
+
+| | Linux / macOS | Windows |
+|---|---|---|
+| config | `~/.config/repohop/config.yaml` | `%AppData%\repohop\config.yaml` |
+| active project | `~/.local/state/repohop/state.yaml` | `%LocalAppData%\repohop\state.yaml` |
+| log | `~/.local/state/repohop/repohop.log` | `%LocalAppData%\repohop\repohop.log` |
+
+`$XDG_CONFIG_HOME` and `$XDG_STATE_HOME` take precedence where they are set.
+Nothing is written until there is something to write, so a run that goes well
+leaves no state and no log.
+
+## Uninstalling
+
+repohop is one binary and three files under your home directory; it installs
+nothing else and touches no repository of yours.
+
+```sh
+rm "$(command -v repohop)"        # the binary, wherever you put it
+rm -rf ~/.config/repohop          # your projects
+rm -rf ~/.local/state/repohop     # remembered project and log
+```
+
+If you installed with `go install`, the source also sits in the module cache:
+`go clean -modcache` clears that for every module, or delete
+`$(go env GOMODCACHE)/github.com/rustbohr` for this one alone.
+
+Keep `~/.config/repohop` if you might come back — reinstalling picks your
+projects up again.
+
 ## When something goes wrong
 
 A crash inside the interface is caught, explained on screen, and written to a

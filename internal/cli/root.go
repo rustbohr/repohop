@@ -84,11 +84,22 @@ func Execute(version string) {
 
 	root := newRootCmd(version)
 	if err := root.ExecuteContext(ctx); err != nil {
-		logging.Log().Error("running "+strings.Join(os.Args[1:], " "), err)
+		if worthLogging(err) {
+			logging.Log().Error("running "+strings.Join(os.Args[1:], " "), err)
+		}
 		fmt.Fprintln(os.Stderr, "repohop:", err)
 		os.Exit(exitCodeFor(err))
 	}
 	os.Exit(exitOK)
+}
+
+// worthLogging keeps the log for things that went wrong, not for things the
+// user was simply told. Being asked to name a project, or told there are none
+// yet, is ordinary use — writing a log file for it would leave every new user
+// with one before they have even started.
+func worthLogging(err error) bool {
+	_, usage := err.(usageError)
+	return !usage
 }
 
 // recoverPanic turns a crash outside the interface into a short message and a
