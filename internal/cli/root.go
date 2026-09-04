@@ -2,8 +2,10 @@
 package cli
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
 
 	"github.com/spf13/cobra"
 )
@@ -57,6 +59,10 @@ func newRootCmd(version string) *cobra.Command {
 		newVersionCmd(version),
 		newProjectsCmd(),
 		newConfigCmd(),
+		newStatusCmd(),
+		newSwitchCmd(),
+		newFetchCmd(),
+		newPullCmd(),
 	)
 
 	return root
@@ -64,8 +70,11 @@ func newRootCmd(version string) *cobra.Command {
 
 // Execute runs the root command and exits the process with the right code.
 func Execute(version string) {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
 	root := newRootCmd(version)
-	if err := root.Execute(); err != nil {
+	if err := root.ExecuteContext(ctx); err != nil {
 		fmt.Fprintln(os.Stderr, "repohop:", err)
 		os.Exit(exitCodeFor(err))
 	}
